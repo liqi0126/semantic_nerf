@@ -15,7 +15,7 @@ from SSR.models.semantic_nerf import get_embedder, Semantic_NeRF
 from SSR.models.rays import sampling_index, sample_pdf, create_rays
 from SSR.training.training_utils import batchify_rays, calculate_segmentation_metrics, calculate_depth_metrics
 from SSR.models.model_utils import raw2outputs
-from SSR.models.model_utils import run_network 
+from SSR.models.model_utils import run_network
 from SSR.visualisation.tensorboard_vis import TFVisualizer
 from SSR.utils import image_utils
 from tqdm import tqdm
@@ -46,7 +46,7 @@ class SSRTrainer(object):
         if not os.path.exists(tf_log_dir):
             os.makedirs(tf_log_dir)
         self.tfb_viz = TFVisualizer(tf_log_dir, config["logging"]["step_log_tfb"], config)
-            
+
     def save_config(self):
         # save config to save_dir for the convience of checking config later
         with open(os.path.join(self.config["experiment"]["save_dir"], 'exp_config.yaml'), 'w') as outfile:
@@ -164,8 +164,9 @@ class SSRTrainer(object):
         with open(json_class_mapping, "r") as f:
             annotations = json.load(f)
         instance_id_to_semantic_label_id = np.array(annotations["id_to_label"])
-        total_num_classes = len(annotations["classes"])
-        assert total_num_classes==101  # excluding void we have 102 classes
+        # total_num_classes = len(annotations["classes"])
+        total_num_classes = 150
+        # assert total_num_classes==101  # excluding void we have 102 classes
         # assert self.num_valid_semantic_class == np.sum(np.unique(instance_id_to_semantic_label_id) >=0 )
 
         colour_map_np = label_colormap(total_num_classes)[data.semantic_classes] # select the existing class from total colour map
@@ -174,8 +175,33 @@ class SSRTrainer(object):
 
         # plot semantic label legend
         # class_name_string = ["voild"] + [x["name"] for x in annotations["classes"] if x["id"] in np.unique(data.semantic)]
-        class_name_string = ["void"] + [x["name"] for x in annotations["classes"]]
-        legend_img_arr = image_utils.plot_semantic_legend(data.semantic_classes, class_name_string, 
+        # class_name_string = ["void"] + [x["name"] for x in annotations["classes"]]
+        class_name_string = [
+            'wall', 'building', 'sky', 'floor', 'tree', 'ceiling', 'road', 'bed ',
+            'windowpane', 'grass', 'cabinet', 'sidewalk', 'person', 'earth',
+            'door', 'table', 'mountain', 'plant', 'curtain', 'chair', 'car',
+            'water', 'painting', 'sofa', 'shelf', 'house', 'sea', 'mirror', 'rug',
+            'field', 'armchair', 'seat', 'fence', 'desk', 'rock', 'wardrobe',
+                    'lamp', 'bathtub', 'railing', 'cushion', 'base', 'box', 'column',
+                    'signboard', 'chest of drawers', 'counter', 'sand', 'sink',
+                    'skyscraper', 'fireplace', 'refrigerator', 'grandstand', 'path',
+                    'stairs', 'runway', 'case', 'pool table', 'pillow', 'screen door',
+                    'stairway', 'river', 'bridge', 'bookcase', 'blind', 'coffee table',
+                    'toilet', 'flower', 'book', 'hill', 'bench', 'countertop', 'stove',
+                    'palm', 'kitchen island', 'computer', 'swivel chair', 'boat', 'bar',
+                    'arcade machine', 'hovel', 'bus', 'towel', 'light', 'truck', 'tower',
+                    'chandelier', 'awning', 'streetlight', 'booth', 'television receiver',
+                    'airplane', 'dirt track', 'apparel', 'pole', 'land', 'bannister',
+                    'escalator', 'ottoman', 'bottle', 'buffet', 'poster', 'stage', 'van',
+                    'ship', 'fountain', 'conveyer belt', 'canopy', 'washer', 'plaything',
+                    'swimming pool', 'stool', 'barrel', 'basket', 'waterfall', 'tent',
+                    'bag', 'minibike', 'cradle', 'oven', 'ball', 'food', 'step', 'tank',
+                    'trade name', 'microwave', 'pot', 'animal', 'bicycle', 'lake',
+                    'dishwasher', 'screen', 'blanket', 'sculpture', 'hood', 'sconce',
+                    'vase', 'traffic light', 'tray', 'ashcan', 'fan', 'pier', 'crt screen',
+                    'plate', 'monitor', 'bulletin board', 'shower', 'radiator', 'glass',
+                    'clock', 'flag']
+        legend_img_arr = image_utils.plot_semantic_legend(data.semantic_classes, class_name_string,
         colormap=label_colormap(total_num_classes+1), save_path=self.save_dir)
         # total_num_classes +1 to include void class
 
@@ -185,30 +211,30 @@ class SSRTrainer(object):
         #####training data#####
         # rgb
         self.train_image = torch.from_numpy(train_samples["image"])
-        self.train_image_scaled = F.interpolate(self.train_image.permute(0,3,1,2,), 
-                                    scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.train_image_scaled = F.interpolate(self.train_image.permute(0,3,1,2,),
+                                    scale_factor=1/self.config["render"]["test_viz_factor"],
                                     mode='bilinear').permute(0,2,3,1)
         # depth
         self.train_depth = torch.from_numpy(train_samples["depth"])
         self.viz_train_depth = np.stack([depth2rgb(dep, min_value=self.near, max_value=self.far) for dep in train_samples["depth"]], axis=0) # [num_test, H, W, 3]
         # process the depth for evaluation purpose
-        self.train_depth_scaled = F.interpolate(torch.unsqueeze(self.train_depth, dim=1).float(), 
-                                                            scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.train_depth_scaled = F.interpolate(torch.unsqueeze(self.train_depth, dim=1).float(),
+                                                            scale_factor=1/self.config["render"]["test_viz_factor"],
                                                             mode='bilinear').squeeze(1).cpu().numpy()
 
-        # semantic 
+        # semantic
         self.train_semantic = torch.from_numpy(train_samples["semantic_remap"])
         self.viz_train_semantic = np.stack([colour_map_np[sem] for sem in self.train_semantic], axis=0) # [num_test, H, W, 3]
 
         self.train_semantic_clean = torch.from_numpy(train_samples["semantic_remap_clean"])
         self.viz_train_semantic_clean = np.stack([colour_map_np[sem] for sem in self.train_semantic_clean], axis=0) # [num_test, H, W, 3]
-        
+
         # process the clean label for evaluation purpose
-        self.train_semantic_clean_scaled = F.interpolate(torch.unsqueeze(self.train_semantic_clean, dim=1).float(), 
-                                                            scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.train_semantic_clean_scaled = F.interpolate(torch.unsqueeze(self.train_semantic_clean, dim=1).float(),
+                                                            scale_factor=1/self.config["render"]["test_viz_factor"],
                                                             mode='nearest').squeeze(1)
-        self.train_semantic_clean_scaled = self.train_semantic_clean_scaled.cpu().numpy() - 1 
-        # pose 
+        self.train_semantic_clean_scaled = self.train_semantic_clean_scaled.cpu().numpy() - 1
+        # pose
         self.train_Ts = torch.from_numpy(train_samples["T_wc"]).float()
 
 
@@ -216,8 +242,8 @@ class SSRTrainer(object):
         # rgb
         self.test_image = torch.from_numpy(test_samples["image"])  # [num_test, H, W, 3]
         # scale the test image for evaluation purpose
-        self.test_image_scaled = F.interpolate(self.test_image.permute(0,3,1,2,), 
-                                            scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.test_image_scaled = F.interpolate(self.test_image.permute(0,3,1,2,),
+                                            scale_factor=1/self.config["render"]["test_viz_factor"],
                                             mode='bilinear').permute(0,2,3,1)
 
 
@@ -225,21 +251,21 @@ class SSRTrainer(object):
         self.test_depth = torch.from_numpy(test_samples["depth"])  # [num_test, H, W]
         self.viz_test_depth = np.stack([depth2rgb(dep, min_value=self.near, max_value=self.far) for dep in test_samples["depth"]], axis=0) # [num_test, H, W, 3]
         # process the depth for evaluation purpose
-        self.test_depth_scaled = F.interpolate(torch.unsqueeze(self.test_depth, dim=1).float(), 
-                                                            scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.test_depth_scaled = F.interpolate(torch.unsqueeze(self.test_depth, dim=1).float(),
+                                                            scale_factor=1/self.config["render"]["test_viz_factor"],
                                                             mode='bilinear').squeeze(1).cpu().numpy()
-        # semantic 
+        # semantic
         self.test_semantic = torch.from_numpy(test_samples["semantic_remap"])  # [num_test, H, W]
 
         self.viz_test_semantic = np.stack([colour_map_np[sem] for sem in self.test_semantic], axis=0) # [num_test, H, W, 3]
 
         # we only add noise to training images, therefore test images are kept intact. No need for test_remap_clean
         # process the clean label for evaluation purpose
-        self.test_semantic_scaled = F.interpolate(torch.unsqueeze(self.test_semantic, dim=1).float(), 
-                                                    scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.test_semantic_scaled = F.interpolate(torch.unsqueeze(self.test_semantic, dim=1).float(),
+                                                    scale_factor=1/self.config["render"]["test_viz_factor"],
                                                     mode='nearest').squeeze(1)
         self.test_semantic_scaled = self.test_semantic_scaled.cpu().numpy() - 1 # shift void class from value 0 to -1, to match self.ignore_label
-        # pose 
+        # pose
         self.test_Ts = torch.from_numpy(test_samples["T_wc"]).float()  # [num_test, 4, 4]
 
         if gpu is True:
@@ -286,7 +312,7 @@ class SSRTrainer(object):
 
         self.num_train = data.train_num
         self.num_test = data.test_num
-        
+
         self.nyu_mode = data.nyu_mode
         # preprocess semantic info
         self.semantic_classes = torch.from_numpy(data.semantic_classes)
@@ -307,11 +333,11 @@ class SSRTrainer(object):
             assert colour_map_np.shape[0] == 35
             class_name_string = ["void",
             "wall", "floor", "cabinet", "bed", "chair",
-            "sofa", "table", "door", "window", 
+            "sofa", "table", "door", "window",
             "picture", "counter", "blinds", "desk", "shelves",
             "curtain",            "pillow",         "floor",
             "clothes", "ceiling", "books", "fridge", "tv",
-            "paper", "towel",     "box", 
+            "paper", "towel",     "box",
                    "night stand", "toilet", "sink", "lamp",
             "bath tub", "bag", "other struct", "other furntr", "other prop"] # 1 void class + 34 valid class
         else:
@@ -319,7 +345,7 @@ class SSRTrainer(object):
 
         '''
          complete NYU-40 classes ["wall", "floor", "cabinet", "bed", "chair",
-        "sofa", "table", "door", "window", "book", 
+        "sofa", "table", "door", "window", "book",
         "picture", "counter", "blinds", "desk", "shelves",
         "curtain", "dresser", "pillow", "mirror", "floor",
         "clothes", "ceiling", "books", "fridge", "tv",
@@ -339,7 +365,7 @@ class SSRTrainer(object):
         self.colour_map = torch.from_numpy(colour_map_np) #
         self.valid_colour_map  = torch.from_numpy(colour_map_np[1:,:]) # used in func render_path to visualise rendered segmentation without void label
 
-        legend_img_arr = image_utils.plot_semantic_legend(np.unique(data.semantic_classes), class_name_string, 
+        legend_img_arr = image_utils.plot_semantic_legend(np.unique(data.semantic_classes), class_name_string,
                         colormap=colour_map_np, save_path=self.save_dir)
 
         # remap different semantic classes to continuous integers from 0 to num_class-1
@@ -348,16 +374,16 @@ class SSRTrainer(object):
         #####training data#####
         # rgb
         self.train_image = torch.from_numpy(train_samples["image"])
-        self.train_image_scaled = F.interpolate(self.train_image.permute(0,3,1,2,), 
-                                    scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.train_image_scaled = F.interpolate(self.train_image.permute(0,3,1,2,),
+                                    scale_factor=1/self.config["render"]["test_viz_factor"],
                                     mode='bilinear').permute(0,2,3,1)
         # depth
         self.train_depth = torch.from_numpy(train_samples["depth"])
         self.viz_train_depth = np.stack([depth2rgb(dep, min_value=self.near, max_value=self.far) for dep in train_samples["depth"]], axis=0) # [num_test, H, W, 3]
-        
+
         # process the depth for evaluation purpose
-        self.train_depth_scaled = F.interpolate(torch.unsqueeze(self.train_depth, dim=1).float(), 
-                                                            scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.train_depth_scaled = F.interpolate(torch.unsqueeze(self.train_depth, dim=1).float(),
+                                                            scale_factor=1/self.config["render"]["test_viz_factor"],
                                                             mode='bilinear').squeeze(1).cpu().numpy()
 
         # semantic
@@ -367,10 +393,10 @@ class SSRTrainer(object):
         # network predictions act as training ground-truth
         self.train_semantic_clean = torch.from_numpy(train_samples["cnn_semantic_clean"])
         self.viz_train_semantic_clean = np.stack([colour_map_np[sem] for sem in self.train_semantic_clean], axis=0) # [num_test, H, W, 3]
-        
+
         # scale the cnn label for evaluation purpose
-        self.train_semantic_clean_scaled = F.interpolate(torch.unsqueeze(self.train_semantic_clean, dim=1).float(), 
-                                                            scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.train_semantic_clean_scaled = F.interpolate(torch.unsqueeze(self.train_semantic_clean, dim=1).float(),
+                                                            scale_factor=1/self.config["render"]["test_viz_factor"],
                                                             mode='nearest').squeeze(1)
         self.train_semantic_clean_scaled = self.train_semantic_clean_scaled.cpu().numpy() -1 # shift void class to -1
 
@@ -378,14 +404,14 @@ class SSRTrainer(object):
         # GT label from Replica ground-truth
         self.train_semantic_gt = torch.from_numpy(train_samples["gt_semantic"])
         self.viz_train_semantic_gt = np.stack([colour_map_np[sem] for sem in self.train_semantic_gt], axis=0) # [num_test, H, W, 3]
-        
+
         # scale the GT label for evaluation purpose
-        self.train_semantic_gt_scaled = F.interpolate(torch.unsqueeze(self.train_semantic_gt, dim=1).float(), 
-                                                    scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.train_semantic_gt_scaled = F.interpolate(torch.unsqueeze(self.train_semantic_gt, dim=1).float(),
+                                                    scale_factor=1/self.config["render"]["test_viz_factor"],
                                                     mode='nearest').squeeze(1)
         self.train_semantic_gt_scaled = self.train_semantic_gt_scaled.cpu().numpy() - 1
 
-        # pose 
+        # pose
         self.train_Ts = torch.from_numpy(train_samples["T_wc"]).float()
 
 
@@ -393,14 +419,14 @@ class SSRTrainer(object):
         # rgb
         self.test_image = torch.from_numpy(test_samples["image"])  # [num_test, H, W, 3]
         # scale the test image for evaluation purpose
-        self.test_image_scaled = F.interpolate(self.test_image.permute(0,3,1,2,), 
-                                            scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.test_image_scaled = F.interpolate(self.test_image.permute(0,3,1,2,),
+                                            scale_factor=1/self.config["render"]["test_viz_factor"],
                                             mode='bilinear').permute(0,2,3,1)
         # depth
         self.test_depth = torch.from_numpy(test_samples["depth"])  # [num_test, H, W]
         self.viz_test_depth = np.stack([depth2rgb(dep, min_value=self.near, max_value=self.far) for dep in test_samples["depth"]], axis=0) # [num_test, H, W, 3]
-        self.test_depth_scaled = F.interpolate(torch.unsqueeze(self.test_depth, dim=1).float(), 
-                                                            scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.test_depth_scaled = F.interpolate(torch.unsqueeze(self.test_depth, dim=1).float(),
+                                                            scale_factor=1/self.config["render"]["test_viz_factor"],
                                                             mode='bilinear').squeeze(1).cpu().numpy()
 
         # semantic
@@ -408,8 +434,8 @@ class SSRTrainer(object):
         self.viz_test_semantic = np.stack([colour_map_np[sem] for sem in self.test_semantic], axis=0) # [num_test, H, W, 3]
 
         # evaluate against CNN predictions
-        self.test_semantic_scaled = F.interpolate(torch.unsqueeze(self.test_semantic, dim=1).float(), 
-                                                    scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.test_semantic_scaled = F.interpolate(torch.unsqueeze(self.test_semantic, dim=1).float(),
+                                                    scale_factor=1/self.config["render"]["test_viz_factor"],
                                                     mode='nearest').squeeze(1)
         self.test_semantic_scaled = self.test_semantic_scaled.cpu().numpy() - 1
 
@@ -419,20 +445,20 @@ class SSRTrainer(object):
         self.viz_test_semantic_gt = np.stack([colour_map_np[sem] for sem in self.test_semantic_gt], axis=0) # [num_test, H, W, 3]
 
         # scale the GT label for evaluation purpose
-        self.test_semantic_gt_scaled = F.interpolate(torch.unsqueeze(self.test_semantic_gt, dim=1).float(), 
-                                                    scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.test_semantic_gt_scaled = F.interpolate(torch.unsqueeze(self.test_semantic_gt, dim=1).float(),
+                                                    scale_factor=1/self.config["render"]["test_viz_factor"],
                                                     mode='nearest').squeeze(1)
         self.test_semantic_gt_scaled = self.test_semantic_gt_scaled.cpu().numpy() - 1
 
 
-        # pose 
+        # pose
         self.test_Ts = torch.from_numpy(test_samples["T_wc"]).float()  # [num_test, 4, 4]
 
         if gpu is True:
             self.train_image = self.train_image.cuda()
             self.train_image_scaled = self.train_image_scaled.cuda()
             self.train_depth = self.train_depth.cuda()
-            self.train_semantic = self.train_semantic.cuda() 
+            self.train_semantic = self.train_semantic.cuda()
 
             self.test_image = self.test_image.cuda()
             self.test_image_scaled = self.test_image_scaled.cuda()
@@ -484,7 +510,7 @@ class SSRTrainer(object):
         self.num_valid_semantic_class = self.num_semantic_class - 1  # exclude void class ==0
         assert self.num_semantic_class==data.num_semantic_class
 
-        colour_map_np = data.colour_map_np_remap 
+        colour_map_np = data.colour_map_np_remap
         self.colour_map = torch.from_numpy(colour_map_np)
         self.valid_colour_map  = torch.from_numpy(colour_map_np[1:,:]) # exclude the first colour map to colourise rendered segmentation without void index
 
@@ -492,7 +518,7 @@ class SSRTrainer(object):
         # plot semantic label legend
         class_name_string = ["void",
         "wall", "floor", "cabinet", "bed", "chair",
-        "sofa", "table", "door", "window", "book", 
+        "sofa", "table", "door", "window", "book",
         "picture", "counter", "blinds", "desk", "shelves",
         "curtain", "dresser", "pillow", "mirror", "floor",
         "clothes", "ceiling", "books", "fridge", "tv",
@@ -500,7 +526,7 @@ class SSRTrainer(object):
         "person", "night stand", "toilet", "sink", "lamp",
         "bath tub", "bag", "other struct", "other furntr", "other prop"] # NYUv2-40-class
 
-        legend_img_arr = image_utils.plot_semantic_legend(data.semantic_classes, class_name_string, 
+        legend_img_arr = image_utils.plot_semantic_legend(data.semantic_classes, class_name_string,
         colormap=data.colour_map_np, save_path=self.save_dir)
         # total_num_classes +1 to include void class
 
@@ -510,29 +536,29 @@ class SSRTrainer(object):
         #####training data#####
         # rgb
         self.train_image = torch.from_numpy(train_samples["image"])
-        self.train_image_scaled = F.interpolate(self.train_image.permute(0,3,1,2,), 
-                                    scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.train_image_scaled = F.interpolate(self.train_image.permute(0,3,1,2,),
+                                    scale_factor=1/self.config["render"]["test_viz_factor"],
                                     mode='bilinear').permute(0,2,3,1)
         # depth
         self.train_depth = torch.from_numpy(train_samples["depth"])
         self.viz_train_depth = np.stack([depth2rgb(dep, min_value=self.near, max_value=self.far) for dep in train_samples["depth"]], axis=0) # [num_test, H, W, 3]
-        self.train_depth_scaled = F.interpolate(torch.unsqueeze(self.train_depth, dim=1).float(), 
-                                                    scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.train_depth_scaled = F.interpolate(torch.unsqueeze(self.train_depth, dim=1).float(),
+                                                    scale_factor=1/self.config["render"]["test_viz_factor"],
                                                     mode='bilinear').squeeze(1).cpu().numpy()
 
-        # semantic 
+        # semantic
         self.train_semantic = torch.from_numpy(train_samples["semantic_remap"])
         self.viz_train_semantic = np.stack([colour_map_np[sem] for sem in self.train_semantic], axis=0) # [num_test, H, W, 3]
 
         self.train_semantic_clean = torch.from_numpy(train_samples["semantic_remap_clean"])
         self.viz_train_semantic_clean = np.stack([colour_map_np[sem] for sem in self.train_semantic_clean], axis=0) # [num_test, H, W, 3]
-        
+
         # process the clean label for evaluation purpose
-        self.train_semantic_clean_scaled = F.interpolate(torch.unsqueeze(self.train_semantic_clean, dim=1).float(), 
-                                                            scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.train_semantic_clean_scaled = F.interpolate(torch.unsqueeze(self.train_semantic_clean, dim=1).float(),
+                                                            scale_factor=1/self.config["render"]["test_viz_factor"],
                                                             mode='nearest').squeeze(1)
-        self.train_semantic_clean_scaled = self.train_semantic_clean_scaled.cpu().numpy() - 1 
-        # pose 
+        self.train_semantic_clean_scaled = self.train_semantic_clean_scaled.cpu().numpy() - 1
+        # pose
         self.train_Ts = torch.from_numpy(train_samples["T_wc"]).float()
 
 
@@ -540,19 +566,19 @@ class SSRTrainer(object):
         # rgb
         self.test_image = torch.from_numpy(test_samples["image"])  # [num_test, H, W, 3]
         # scale the test image for evaluation purpose
-        self.test_image_scaled = F.interpolate(self.test_image.permute(0,3,1,2,), 
-                                            scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.test_image_scaled = F.interpolate(self.test_image.permute(0,3,1,2,),
+                                            scale_factor=1/self.config["render"]["test_viz_factor"],
                                             mode='bilinear').permute(0,2,3,1)
 
 
         # depth
         self.test_depth = torch.from_numpy(test_samples["depth"])  # [num_test, H, W]
         self.viz_test_depth = np.stack([depth2rgb(dep, min_value=self.near, max_value=self.far) for dep in test_samples["depth"]], axis=0) # [num_test, H, W, 3]
-        self.test_depth_scaled = F.interpolate(torch.unsqueeze(self.test_depth, dim=1).float(), 
-                                                    scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.test_depth_scaled = F.interpolate(torch.unsqueeze(self.test_depth, dim=1).float(),
+                                                    scale_factor=1/self.config["render"]["test_viz_factor"],
                                                     mode='bilinear').squeeze(1).cpu().numpy()
-                                                    
-        # semantic 
+
+        # semantic
         self.test_semantic = torch.from_numpy(test_samples["semantic_remap"])  # [num_test, H, W]
         # self.viz_test_semantic = torch.cat([self.colour_map[sem] for sem in self.test_semantic], dim=0).numpy() # [num_test, H, W, 3]
         self.viz_test_semantic = np.stack([colour_map_np[sem] for sem in self.test_semantic], axis=0) # [num_test, H, W, 3]
@@ -561,11 +587,11 @@ class SSRTrainer(object):
 
 
         # process the clean label for evaluation purpose
-        self.test_semantic_scaled = F.interpolate(torch.unsqueeze(self.test_semantic, dim=1).float(), 
-                                                    scale_factor=1/self.config["render"]["test_viz_factor"], 
+        self.test_semantic_scaled = F.interpolate(torch.unsqueeze(self.test_semantic, dim=1).float(),
+                                                    scale_factor=1/self.config["render"]["test_viz_factor"],
                                                     mode='nearest').squeeze(1)
         self.test_semantic_scaled = self.test_semantic_scaled.cpu().numpy() - 1 # shift void class from value 0 to -1, to match self.ignore_label
-        # pose 
+        # pose
         self.test_Ts = torch.from_numpy(test_samples["T_wc"]).float()  # [num_test, 4, 4]
 
         if gpu is True:
@@ -600,7 +626,7 @@ class SSRTrainer(object):
         self.tfb_viz.tb_writer.add_image('Test/vis_sem_label_GT', self.viz_test_semantic, 0, dataformats='NHWC')
 
     def init_rays(self):
-        
+
         # create rays
         rays = create_rays(self.num_train, self.train_Ts, self.H, self.W, self.fx, self.fy, self.cx, self.cy,
                                 self.near, self.far, use_viewdirs=self.use_viewdir, convention=self.convention)
@@ -621,7 +647,7 @@ class SSRTrainer(object):
     def sample_data(self, step, rays, h, w, no_batching=True, mode="train"):
         # generate sampling index
         num_img, num_ray, ray_dim = rays.shape
-        
+
         assert num_ray == h*w
         total_ray_num = num_img*h*w
 
@@ -655,7 +681,7 @@ class SSRTrainer(object):
                 gt_depth = depth.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
                 sematic_available_flag = self.mask_ids[index_batch] # semantic available if mask_id is 1 (train with rgb loss and semantic loss) else 0 (train with rgb loss only)
                 gt_semantic = semantic.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
-                gt_semantic = gt_semantic.cuda()  
+                gt_semantic = gt_semantic.cuda()
         else:  # sample from all random pixels
 
             index_hw = self.rand_idx[self.i_batch:self.i_batch+self.n_rays]
@@ -666,7 +692,7 @@ class SSRTrainer(object):
             if self.enable_semantic:
                 gt_depth = depth.reshape(-1)[index_hw]
                 gt_semantic = semantic.reshape(-1)[index_hw]
-                gt_semantic = gt_semantic.cuda()  
+                gt_semantic = gt_semantic.cuda()
 
             self.i_batch += self.n_rays
             if self.i_batch >= total_ray_num:
@@ -709,7 +735,7 @@ class SSRTrainer(object):
 
         return all_ret
 
-    
+
     def render_rays_chunk(self, flat_rays, chunk_size=1024*4):
         """Render rays while moving resulting chunks to cpu to avoid OOM when rendering large images."""
         B = flat_rays.shape[0]  # num_rays
@@ -745,7 +771,7 @@ class SSRTrainer(object):
 
 
         z_vals = z_vals.expand([N_rays, self.N_samples])
-        
+
         if self.perturb > 0. and self.training:  # perturb sampling depths (z_vals)
             if self.training is True:  # only add perturbation during training intead of testing
                 # get intervals between samples
@@ -838,7 +864,7 @@ class SSRTrainer(object):
 
         model_fine = None
         if self.N_importance > 0:
-            model_fine = nerf_model(enable_semantic = self.enable_semantic, num_semantic_classes=self.num_valid_semantic_class, 
+            model_fine = nerf_model(enable_semantic = self.enable_semantic, num_semantic_classes=self.num_valid_semantic_class,
                               D=self.config["model"]["netdepth_fine"], W=self.config["model"]["netwidth_fine"],
                               input_ch=input_ch, output_ch=output_ch, skips=skips,
                               input_ch_views=input_ch_views, use_viewdirs=self.config["render"]["use_viewdirs"]).cuda()
@@ -863,12 +889,12 @@ class SSRTrainer(object):
         mse2psnr = lambda x: -10. * torch.log(x) / torch.log(torch.Tensor([10.]).cuda())
         CrossEntropyLoss = nn.CrossEntropyLoss(ignore_index=self.ignore_label)
         KLDLoss = nn.KLDivLoss(reduction="none")
-        kl_loss = lambda input_log_prob,target_prob: KLDLoss(input_log_prob, target_prob) 
-        # this function assume input is already in log-probabilities 
+        kl_loss = lambda input_log_prob,target_prob: KLDLoss(input_log_prob, target_prob)
+        # this function assume input is already in log-probabilities
 
         dataset_type = self.config["experiment"]["dataset_type"]
         if dataset_type == "replica" or dataset_type == "replica_nyu_cnn" or dataset_type == "scannet":
-            crossentropy_loss = lambda logit, label: CrossEntropyLoss(logit, label-1)  # replica has void class of ID==0, label-1 to shift void class to -1 
+            crossentropy_loss = lambda logit, label: CrossEntropyLoss(logit, label-1)  # replica has void class of ID==0, label-1 to shift void class to -1
         else:
             assert False
 
@@ -884,7 +910,7 @@ class SSRTrainer(object):
             sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sematic_available = sampled_data
         else:
             sampled_rays, sampled_gt_rgb = sampled_data
-                    
+
         output_dict = self.render_rays(sampled_rays)
 
         rgb_coarse = output_dict["rgb_coarse"]  # N_rays x 3
@@ -917,7 +943,7 @@ class SSRTrainer(object):
 
         with torch.no_grad():
             psnr_coarse = mse2psnr(img_loss_coarse)
-            
+
         if self.N_importance > 0:
             img_loss_fine = img2mse(rgb_fine, sampled_gt_rgb)
             if self.enable_semantic and sematic_available:
@@ -933,7 +959,7 @@ class SSRTrainer(object):
         total_img_loss = img_loss_coarse + img_loss_fine
         total_sem_loss = semantic_loss_coarse + semantic_loss_fine
 
-        
+
         wgt_sem_loss = float(self.config["train"]["wgt_sem"])
         total_loss = total_img_loss + total_sem_loss*wgt_sem_loss
 
@@ -955,15 +981,15 @@ class SSRTrainer(object):
                                     [img_loss_coarse, img_loss_fine, total_img_loss,
                                     semantic_loss_coarse, semantic_loss_fine, total_sem_loss, total_sem_loss*wgt_sem_loss,
                                     total_loss],
-                                    ['Train/Loss/img_loss_coarse', 'Train/Loss/img_loss_fine', 'Train/Loss/total_img_loss', 
+                                    ['Train/Loss/img_loss_coarse', 'Train/Loss/img_loss_fine', 'Train/Loss/total_img_loss',
                                     'Train/Loss/semantic_loss_coarse', 'Train/Loss/semantic_loss_fine', 'Train/Loss/total_sem_loss', 'Train/Loss/weighted_total_sem_loss',
                                     'Train/Loss/total_loss'])
 
             # add raw transparancy value into tfb histogram
-            trans_coarse = output_dict["raw_coarse"][..., 3]   
-            self.tfb_viz.vis_histogram(global_step, trans_coarse, 'trans_coarse')     
+            trans_coarse = output_dict["raw_coarse"][..., 3]
+            self.tfb_viz.vis_histogram(global_step, trans_coarse, 'trans_coarse')
             if self.N_importance>0:
-                trans_fine = output_dict['raw_fine'][..., 3]   
+                trans_fine = output_dict['raw_fine'][..., 3]
                 self.tfb_viz.vis_histogram(global_step, trans_fine, 'trans_fine')
 
             self.tfb_viz.vis_scalars(global_step,
@@ -986,7 +1012,7 @@ class SSRTrainer(object):
             }, ckpt_file)
             print('Saved checkpoints at', ckpt_file)
 
-        # render and save training-set images 
+        # render and save training-set images
         if global_step % self.config["logging"]["step_vis_train"]==0 and global_step > 0:
             self.training = False  # enable testing mode before rendering results, need to set back during training!
             self.ssr_net_coarse.eval()
@@ -1012,7 +1038,7 @@ class SSRTrainer(object):
 
                 batch_train_img_mse = img2mse(torch.from_numpy(rgbs), self.train_image_scaled.cpu())
                 batch_train_img_psnr = mse2psnr(batch_train_img_mse)
-                
+
                 self.tfb_viz.vis_scalars(global_step, [batch_train_img_psnr, batch_train_img_mse], ['Train/Metric/batch_PSNR', 'Train/Metric/batch_MSE'])
 
             imageio.mimwrite(os.path.join(trainsavedir, 'rgb.mp4'), to8b_np(rgbs), fps=30, quality=8)
@@ -1041,7 +1067,7 @@ class SSRTrainer(object):
 
                 # add segmentation quantative metrics during training into tfb
                 miou_train, miou_train_validclass ,total_accuracy_train, class_average_accuracy_train, ious_train = \
-                calculate_segmentation_metrics(true_labels=self.train_semantic_clean_scaled, predicted_labels=sems, 
+                calculate_segmentation_metrics(true_labels=self.train_semantic_clean_scaled, predicted_labels=sems,
                 number_classes=self.num_valid_semantic_class, ignore_label=self.ignore_label)
                 self.tfb_viz.vis_scalars(global_step,
                         [miou_train, miou_train_validclass, total_accuracy_train, class_average_accuracy_train],
@@ -1053,12 +1079,12 @@ class SSRTrainer(object):
                        f"mIoU: {miou_train}, total_acc: {total_accuracy_train}, avg_acc: {class_average_accuracy_train}")
 
 
-                if dataset_type == "replica_nyu_cnn": 
+                if dataset_type == "replica_nyu_cnn":
                     # we also evaluate the rendering against the trained CNN labels in addition to perfect GT labels
                     miou_train, miou_train_validclass, total_accuracy_train, class_average_accuracy_train, ious_train = \
-                    calculate_segmentation_metrics(true_labels=self.train_semantic_gt_scaled, predicted_labels=sems, 
+                    calculate_segmentation_metrics(true_labels=self.train_semantic_gt_scaled, predicted_labels=sems,
                     number_classes=self.num_valid_semantic_class, ignore_label=self.ignore_label)
-                    
+
                     self.tfb_viz.vis_scalars(global_step,
                             [miou_train, miou_train_validclass, total_accuracy_train, class_average_accuracy_train],
                             ['Train/Metric/mIoU_GT', 'Train/Metric/mIoU_GT_validclass','Train/Metric/total_acc_GT', 'Train/Metric/avg_acc_GT'])
@@ -1093,7 +1119,7 @@ class SSRTrainer(object):
 
                 batch_test_img_mse = img2mse(torch.from_numpy(rgbs), self.test_image_scaled.cpu())
                 batch_test_img_psnr = mse2psnr(batch_test_img_mse)
-                
+
                 self.tfb_viz.vis_scalars(global_step, [batch_test_img_psnr, batch_test_img_mse], ['Test/Metric/batch_PSNR', 'Test/Metric/batch_MSE'])
 
             imageio.mimwrite(os.path.join(testsavedir, 'rgb.mp4'), to8b_np(rgbs), fps=30, quality=8)
@@ -1119,7 +1145,7 @@ class SSRTrainer(object):
 
                 # add segmentation quantative metrics during testung into tfb
                 miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = \
-                calculate_segmentation_metrics(true_labels=self.test_semantic_scaled, predicted_labels=sems, 
+                calculate_segmentation_metrics(true_labels=self.test_semantic_scaled, predicted_labels=sems,
                 number_classes=self.num_valid_semantic_class, ignore_label=self.ignore_label)
                 # number_classes=self.num_semantic_class-1 to exclude void class
                 self.tfb_viz.vis_scalars(global_step,
@@ -1127,10 +1153,10 @@ class SSRTrainer(object):
                         ['Test/Metric/mIoU', 'Test/Metric/mIoU_validclass', 'Test/Metric/total_acc', 'Test/Metric/avg_acc'])
 
 
-                if dataset_type == "replica_nyu_cnn": 
+                if dataset_type == "replica_nyu_cnn":
                     # we also evaluate the rendering against the trained CNN labels in addition to perfect GT labels
                     miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = \
-                    calculate_segmentation_metrics(true_labels=self.test_semantic_gt_scaled, predicted_labels=sems, 
+                    calculate_segmentation_metrics(true_labels=self.test_semantic_gt_scaled, predicted_labels=sems,
                     number_classes=self.num_valid_semantic_class, ignore_label=self.ignore_label)
                     self.tfb_viz.vis_scalars(global_step,
                             [miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test],
@@ -1138,7 +1164,7 @@ class SSRTrainer(object):
 
                     tqdm.write(f"[Testing Metric against GT Preds] Iter: {global_step} "
                         f"mIoU: {miou_test}, total_acc: {total_accuracy_test}, avg_acc: {class_average_accuracy_test}")
-                        
+
         if global_step%self.config["logging"]["step_log_print"]==0:
             tqdm.write(f"[TRAIN] Iter: {global_step} "
                        f"Loss: {total_loss.item()} "
@@ -1158,7 +1184,7 @@ class SSRTrainer(object):
 
         sems = []
         vis_sems = []
-        
+
         entropys = []
         vis_entropys = []
 
@@ -1166,7 +1192,7 @@ class SSRTrainer(object):
         to8b = lambda x: (255 * torch.clamp(x, 0, 1)).type(torch.uint8)
         logits_2_label = lambda x: torch.argmax(torch.nn.functional.softmax(x, dim=-1),dim=-1)
         logits_2_uncertainty = lambda x: torch.sum(-F.log_softmax(x, dim=-1)*F.softmax(x, dim=-1), dim=-1, keepdim=True)
-        
+
         t = time.time()
         for i, c2w in enumerate(tqdm(rays)):
             print(i, time.time() - t)
@@ -1175,7 +1201,7 @@ class SSRTrainer(object):
             rgb_coarse = output_dict["rgb_coarse"]
             disp_coarse = output_dict["disp_coarse"]
             depth_coarse = output_dict["depth_coarse"]
-            
+
             rgb = rgb_coarse
             depth =depth_coarse
             disp = disp_coarse
@@ -1202,12 +1228,12 @@ class SSRTrainer(object):
                 if self.enable_semantic:
                     sem_label_fine = logits_2_label(output_dict["sem_logits_fine"])
                     sem_uncertainty_fine = logits_2_uncertainty(output_dict["sem_logits_fine"])
-                    vis_sem_label_fine = self.valid_colour_map[sem_label_fine]  
+                    vis_sem_label_fine = self.valid_colour_map[sem_label_fine]
                     # shift pred label by +1 to shift the first valid class to use the first valid colour-map instead of the void colour-map
                     sem_label = sem_label_fine
                     vis_sem = vis_sem_label_fine
                     sem_uncertainty = sem_uncertainty_fine
-        
+
             rgb = rgb.cpu().numpy().reshape((self.H_scaled, self.W_scaled, 3))
             depth = depth.cpu().numpy().reshape((self.H_scaled, self.W_scaled))
             disp = disp.cpu().numpy().reshape((self.H_scaled, self.W_scaled))
@@ -1253,7 +1279,7 @@ class SSRTrainer(object):
 
                 imageio.imwrite(depth_filename, dep_mm, format="png", prefer_uint8=False)
                 imageio.imwrite(vis_depth_filename, vis_dep)
-                
+
                 if self.enable_semantic:
 
                     label_filename = os.path.join(save_dir, 'label_{:03d}.png'.format(i))
@@ -1265,12 +1291,12 @@ class SSRTrainer(object):
                     vis_sem = vis_sems[-1]
 
 
-                    sem_uncer = to8b_np(entropys[-1])        
+                    sem_uncer = to8b_np(entropys[-1])
                     vis_sem_uncer = vis_entropys[-1]
 
                     imageio.imwrite(label_filename, sem)
                     imageio.imwrite(vis_label_filename, vis_sem)
-                
+
                     imageio.imwrite(label_filename, sem)
                     imageio.imwrite(vis_label_filename, vis_sem)
 
@@ -1281,7 +1307,7 @@ class SSRTrainer(object):
         disps = np.stack(disps, 0)
         deps = np.stack(deps, 0)
         vis_deps = np.stack(vis_deps, 0)
-                        
+
         if self.enable_semantic:
             sems = np.stack(sems, 0)
             vis_sems = np.stack(vis_sems, 0)
