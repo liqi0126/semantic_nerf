@@ -16,7 +16,7 @@ def train():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--config_file', type=str, default="/home/shuaifeng/Documents/PhD_Research/CodeRelease/SemanticSceneRepresentations/SSR/configs/SSR_room2_config_release.yaml",
     #                     help='config file name.')
-    parser.add_argument('--config_file', type=str, default="/home/shuaifeng/Documents/PhD_Research/CodeRelease/SemanticSceneRepresentations/SSR/configs/SSR_room0_config_test.yaml",
+    parser.add_argument('--config_file', type=str, default="SSR/configs/SSR_room0_config.yaml",
                     help='config file name.')
     parser.add_argument('--dataset_type', type=str, default="replica", choices= ["replica", "replica_nyu_cnn", "scannet"],
                         help='the dataset to be used,')
