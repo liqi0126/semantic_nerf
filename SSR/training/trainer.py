@@ -1147,6 +1147,95 @@ class SSRTrainer(object):
                        f"semantic_loss: {semantic_loss_coarse.item()}, semantic_fine: {semantic_loss_fine.item()}, "
                        f"PSNR_coarse: {psnr_coarse.item()}, PSNR_fine: {psnr_fine.item()}")
 
+    def eval_step(
+            self,
+            global_step
+    ):
+        # Misc
+        img2mse = lambda x, y: torch.mean((x - y) ** 2)
+        mse2psnr = lambda x: -10. * torch.log(x) / torch.log(torch.Tensor([10.]).cuda())
+        # this function assume input is already in log-probabilities
+        dataset_type = self.config["experiment"]["dataset_type"]
+
+        to8b_np = lambda x: (255 * np.clip(x, 0, 1)).astype(np.uint8)
+
+        # render and save test images, corresponding videos
+        self.training = False  # enable testing mode before rendering results, need to set back during training!
+        self.ssr_net_coarse.eval()
+        self.ssr_net_fine.eval()
+        testsavedir = os.path.join(self.config["experiment"]["save_dir"], "test_render",
+                                   'step_{:06d}'.format(global_step))
+        os.makedirs(testsavedir, exist_ok=True)
+        print(' {} test images'.format(self.num_test))
+        with torch.no_grad():
+            rgbs, disps, deps, vis_deps, sems, vis_sems, sem_uncers, vis_sem_uncers = self.render_path(
+                self.rays_test, save_dir=testsavedir)
+        print('Saved test set')
+
+        self.training = True  # set training flag back after rendering images
+        self.ssr_net_coarse.train()
+        self.ssr_net_fine.train()
+
+        with torch.no_grad():
+            if self.enable_semantic:
+                # mask out void regions for better visualisation
+                for idx in range(vis_sems.shape[0]):
+                    vis_sems[idx][self.test_semantic_scaled[idx] == self.ignore_label, :] = 0
+
+            batch_test_img_mse = img2mse(torch.from_numpy(rgbs), self.test_image_scaled.cpu())
+            batch_test_img_psnr = mse2psnr(batch_test_img_mse)
+
+            self.tfb_viz.vis_scalars(global_step, [batch_test_img_psnr, batch_test_img_mse],
+                                     ['Test/Metric/batch_PSNR', 'Test/Metric/batch_MSE'])
+
+        imageio.mimwrite(os.path.join(testsavedir, 'rgb.mp4'), to8b_np(rgbs), fps=30, quality=8)
+        imageio.mimwrite(os.path.join(testsavedir, 'dep.mp4'), vis_deps, fps=30, quality=8)
+        imageio.mimwrite(os.path.join(testsavedir, 'disps.mp4'), to8b_np(disps / np.max(disps)), fps=30, quality=8)
+        if self.enable_semantic:
+            imageio.mimwrite(os.path.join(testsavedir, 'sem.mp4'), vis_sems, fps=30, quality=8)
+            imageio.mimwrite(os.path.join(testsavedir, 'sem_uncertainty.mp4'), vis_sem_uncers, fps=30, quality=8)
+
+        # add rendered image into tf-board
+        self.tfb_viz.tb_writer.add_image('Test/rgb', rgbs, global_step, dataformats='NHWC')
+        self.tfb_viz.tb_writer.add_image('Test/depth', vis_deps, global_step, dataformats='NHWC')
+        self.tfb_viz.tb_writer.add_image('Test/disps', np.expand_dims(disps, -1), global_step, dataformats='NHWC')
+
+        # evaluate depths
+        depth_metrics_dic = calculate_depth_metrics(depth_trgt=self.test_depth_scaled, depth_pred=deps)
+        self.tfb_viz.vis_scalars(global_step,
+                                 list(depth_metrics_dic.values()),
+                                 ["Test/Metric/" + k for k in list(depth_metrics_dic.keys())])
+        if self.enable_semantic:
+            self.tfb_viz.tb_writer.add_image('Test/vis_sem_label', vis_sems, global_step, dataformats='NHWC')
+            self.tfb_viz.tb_writer.add_image('Test/vis_sem_uncertainty', vis_sem_uncers, global_step,
+                                             dataformats='NHWC')
+
+            # add segmentation quantative metrics during testung into tfb
+            miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = \
+                calculate_segmentation_metrics(true_labels=self.test_semantic_scaled, predicted_labels=sems,
+                                               number_classes=self.num_valid_semantic_class,
+                                               ignore_label=self.ignore_label)
+            # number_classes=self.num_semantic_class-1 to exclude void class
+            self.tfb_viz.vis_scalars(global_step,
+                                     [miou_test, miou_test_validclass, total_accuracy_test,
+                                      class_average_accuracy_test],
+                                     ['Test/Metric/mIoU', 'Test/Metric/mIoU_validclass', 'Test/Metric/total_acc',
+                                      'Test/Metric/avg_acc'])
+
+            if dataset_type == "replica_nyu_cnn":
+                # we also evaluate the rendering against the trained CNN labels in addition to perfect GT labels
+                miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = \
+                    calculate_segmentation_metrics(true_labels=self.test_semantic_gt_scaled, predicted_labels=sems,
+                                                   number_classes=self.num_valid_semantic_class,
+                                                   ignore_label=self.ignore_label)
+                self.tfb_viz.vis_scalars(global_step,
+                                         [miou_test, miou_test_validclass, total_accuracy_test,
+                                          class_average_accuracy_test],
+                                         ['Test/Metric/mIoU_GT', 'Test/Metric/mIoU_GT_validclass',
+                                          'Test/Metric/total_acc_GT', 'Test/Metric/avg_acc_GT'])
+
+                tqdm.write(f"[Testing Metric against GT Preds] Iter: {global_step} "
+                           f"mIoU: {miou_test}, total_acc: {total_accuracy_test}, avg_acc: {class_average_accuracy_test}")
 
     def render_path(self, rays, save_dir=None):
 

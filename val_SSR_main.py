@@ -209,7 +209,7 @@ def train():
     for i in trange(start, N_iters):
 
         time0 = time.time()
-        ssr_trainer.step(global_step)
+        ssr_trainer.eval_step(global_step)
 
         dt = time.time()-time0
         print()
