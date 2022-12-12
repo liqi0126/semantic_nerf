@@ -176,7 +176,7 @@ class SSRTrainer(object):
         # plot semantic label legend
         # class_name_string = ["voild"] + [x["name"] for x in annotations["classes"] if x["id"] in np.unique(data.semantic)]
         # class_name_string = ["void"] + [x["name"] for x in annotations["classes"]]
-        class_name_string = [
+        class_name_string = ["void"] + [
             'wall', 'building', 'sky', 'floor', 'tree', 'ceiling', 'road', 'bed ',
             'windowpane', 'grass', 'cabinet', 'sidewalk', 'person', 'earth',
             'door', 'table', 'mountain', 'plant', 'curtain', 'chair', 'car',
@@ -201,6 +201,7 @@ class SSRTrainer(object):
                     'vase', 'traffic light', 'tray', 'ashcan', 'fan', 'pier', 'crt screen',
                     'plate', 'monitor', 'bulletin board', 'shower', 'radiator', 'glass',
                     'clock', 'flag']
+        # class_name_string = ["void"] + [x["name"] for x in annotations["classes"]]
         legend_img_arr = image_utils.plot_semantic_legend(data.semantic_classes, class_name_string,
         colormap=label_colormap(total_num_classes+1), save_path=self.save_dir)
         # total_num_classes +1 to include void class
@@ -872,6 +873,20 @@ class SSRTrainer(object):
 
         # Create optimizer
         optimizer = torch.optim.Adam(params=grad_vars, lr=self.lrate)
+
+        ckpt = torch.load('rgb_only/checkpoints/080000.ckpt')
+        model.load_state_dict(ckpt['network_coarse_state_dict'], strict=False)
+        model_fine.load_state_dict(ckpt['network_fine_state_dict'], strict=False)
+
+
+        for n, p in model.named_parameters():
+            if 'semantic' not in n:
+                p.requires_grad = False
+
+
+        for n, p in model_fine.named_parameters():
+            if 'semantic' not in n:
+                p.requires_grad = False
 
         self.ssr_net_coarse = model
         self.ssr_net_fine = model_fine

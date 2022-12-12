@@ -14,7 +14,9 @@ class ReplicaDatasetCache(Dataset):
         self.rgb_dir = os.path.join(data_dir, "rgb")
         self.depth_dir = os.path.join(data_dir, "depth")  # depth is in mm uint
         # self.semantic_class_dir = os.path.join(data_dir, "semantic_class")
-        self.semantic_class_dir = os.path.join(data_dir, "ade20k_semantic_class")
+        # self.semantic_class_dir = os.path.join(data_dir, "ade20k_semantic_class")
+        # self.semantic_class_dir = os.path.join(data_dir, "ade20k_conf_0_95")
+        self.semantic_class_dir = os.path.join(data_dir, "ade20k_no_conf")
         self.semantic_instance_dir = os.path.join(data_dir, "semantic_instance")
         if not os.path.exists(self.semantic_instance_dir):
             self.semantic_instance_dir = None
