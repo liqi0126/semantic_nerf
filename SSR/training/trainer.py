@@ -1311,31 +1311,30 @@ class SSRTrainer(object):
 
                 if self.enable_semantic:
                     sem_label_fine = logits_2_label(output_dict["sem_logits_fine"])
+                    semantic = ade_semantic_classes[sem_label_fine+1].astype('int') - 1
+                    semantic_old = deepcopy(semantic)
+                    semantic_unique = np.unique(semantic)
+                    for ade in semantic_unique:
+                        if ade in ade2replica:
+                            semantic[semantic_old == ade] = ade2replica[ade]
+                        else:
+                            semantic[semantic_old == ade] = -1
 
-                    # semantic = ade_semantic_classes[sem_label_fine+1].astype('int') - 1
-                    # semantic_old = deepcopy(semantic)
-                    # semantic_unique = np.unique(semantic)
-                    # for ade in semantic_unique:
-                    #     if ade in ade2replica:
-                    #         semantic[semantic_old == ade] = ade2replica[ade]
-                    #     else:
-                    #         semantic[semantic_old == ade] = -1
+                    semantic += 1
 
-                    # semantic += 1
-
-                    # semantic_unique = np.unique(semantic)
-                    # semantic_old = deepcopy(semantic)
-                    # for replica in semantic_unique:
-                    #     index = torch.where(self.semantic_classes == replica)[0]
-                    #     if len(index) == 0:
-                    #         semantic[semantic_old == replica] = 0
-                    #     else:
-                    #         index = index[0]
-                    #         semantic[semantic_old == replica] = index
+                    semantic_unique = np.unique(semantic)
+                    semantic_old = deepcopy(semantic)
+                    for replica in semantic_unique:
+                        index = torch.where(self.semantic_classes == replica)[0]
+                        if len(index) == 0:
+                            semantic[semantic_old == replica] = 0
+                        else:
+                            index = index[0]
+                            semantic[semantic_old == replica] = index
 
 
-                    # semantic -= 1
-                    # sem_label_fine = torch.from_numpy(semantic)
+                    semantic -= 1
+                    sem_label_fine = torch.from_numpy(semantic)
 
                     sem_uncertainty_fine = logits_2_uncertainty(output_dict["sem_logits_fine"])
                     vis_sem_label_fine = self.valid_colour_map[sem_label_fine]

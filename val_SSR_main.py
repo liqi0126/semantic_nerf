@@ -138,8 +138,8 @@ def train():
     ade20k_semantic_classes = ssr_trainer.prepare_data_ade20k(replica_data_conf_loader)
 
     # Create nerf model, init optimizer
-    #  ssr_trainer.create_ssr(len(ade20k_semantic_classes)-1)
-    ssr_trainer.create_ssr(ssr_trainer.num_valid_semantic_class)
+    ssr_trainer.create_ssr(len(ade20k_semantic_classes)-1)
+    # ssr_trainer.create_ssr(ssr_trainer.num_valid_semantic_class)
     ssr_trainer.ssr_net_coarse.load_state_dict(torch.load(args.resume)['network_coarse_state_dict'])
     ssr_trainer.ssr_net_fine.load_state_dict(torch.load(args.resume)['network_fine_state_dict'])
 
