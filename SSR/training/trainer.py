@@ -6,6 +6,7 @@ import json
 import time
 import math
 import yaml
+from copy import deepcopy
 from collections import defaultdict
 
 import torch
@@ -140,6 +141,23 @@ class SSRTrainer(object):
         # logging
         self.save_dir = self.config["experiment"]["save_dir"]
 
+    def prepare_data_ade20k(self, data):
+        # preprocess semantic info
+        #  self.semantic_classes = []
+        #  for ade in data.semantic_classes:
+        #      if ade == 0:
+        #          self.semantic_classes.append(0)
+        #      elif ade-1 in ade2replica:
+        #          self.semantic_classes.append(ade2replica[ade-1]+1)
+        #      else:
+        #          self.semantic_classes.append(0)
+        #  self.semantic_classes = torch.tensor(self.semantic_classes)
+
+        # assert self.num_semantic_class==data.num_semantic_class
+
+        return data.semantic_classes
+
+
     def prepare_data_replica(self, data, gpu=True):
         self.ignore_label = -1
 
@@ -157,11 +175,9 @@ class SSRTrainer(object):
         # preprocess semantic info
         self.semantic_classes = torch.from_numpy(data.semantic_classes)
         self.num_semantic_class = self.semantic_classes.shape[0]  # number of semantic classes, including void class=0
-        # self.num_semantic_class = 150  # number of semantic classes, including void class=0
+        #  self.num_semantic_class = 41  # number of semantic classes, including void class=0
         self.num_valid_semantic_class = self.num_semantic_class - 1  # exclude void class
-        assert self.num_semantic_class==data.num_semantic_class
-
-        import ipdb; ipdb.set_trace()
+        # assert self.num_semantic_class==data.num_semantic_class
 
         json_class_mapping = os.path.join(self.config["experiment"]["scene_file"], "info_semantic.json")
         with open(json_class_mapping, "r") as f:
@@ -817,7 +833,7 @@ class SSRTrainer(object):
         return ret
 
 
-    def create_ssr(self):
+    def create_ssr(self, num_sem_class):
         """Instantiate NeRF's MLP model.
         """
 
@@ -833,7 +849,8 @@ class SSRTrainer(object):
                                                         scalar_factor=1)
         output_ch = 5 if self.N_importance > 0 else 4
         skips = [4]
-        model = nerf_model(enable_semantic = self.enable_semantic, num_semantic_classes=self.num_valid_semantic_class,
+
+        model = nerf_model(enable_semantic = self.enable_semantic, num_semantic_classes=num_sem_class,
                      D=self.config["model"]["netdepth"], W=self.config["model"]["netwidth"],
                      input_ch=input_ch, output_ch=output_ch, skips=skips,
                      input_ch_views=input_ch_views, use_viewdirs=self.config["render"]["use_viewdirs"]).cuda()
@@ -841,7 +858,7 @@ class SSRTrainer(object):
 
         model_fine = None
         if self.N_importance > 0:
-            model_fine = nerf_model(enable_semantic = self.enable_semantic, num_semantic_classes=self.num_valid_semantic_class,
+            model_fine = nerf_model(enable_semantic = self.enable_semantic, num_semantic_classes=num_sem_class,
                               D=self.config["model"]["netdepth_fine"], W=self.config["model"]["netwidth_fine"],
                               input_ch=input_ch, output_ch=output_ch, skips=skips,
                               input_ch_views=input_ch_views, use_viewdirs=self.config["render"]["use_viewdirs"]).cuda()
@@ -1152,7 +1169,9 @@ class SSRTrainer(object):
 
     def eval_step(
             self,
-            global_step
+            global_step,
+            ade_semantic_classes,
+            ade2replica
     ):
         # Misc
         img2mse = lambda x, y: torch.mean((x - y) ** 2)
@@ -1161,6 +1180,8 @@ class SSRTrainer(object):
         dataset_type = self.config["experiment"]["dataset_type"]
 
         to8b_np = lambda x: (255 * np.clip(x, 0, 1)).astype(np.uint8)
+
+        first_k = 1000
 
         # render and save test images, corresponding videos
         self.training = False  # enable testing mode before rendering results, need to set back during training!
@@ -1172,8 +1193,9 @@ class SSRTrainer(object):
         print(' {} test images'.format(self.num_test))
         with torch.no_grad():
             rgbs, disps, deps, vis_deps, sems, vis_sems, sem_uncers, vis_sem_uncers = self.render_path(
-                self.rays_test, save_dir=testsavedir)
+                self.rays_test[:first_k], ade_semantic_classes, ade2replica, save_dir=testsavedir)
         print('Saved test set')
+
 
         self.training = True  # set training flag back after rendering images
         self.ssr_net_coarse.train()
@@ -1185,7 +1207,7 @@ class SSRTrainer(object):
                 for idx in range(vis_sems.shape[0]):
                     vis_sems[idx][self.test_semantic_scaled[idx] == self.ignore_label, :] = 0
 
-            batch_test_img_mse = img2mse(torch.from_numpy(rgbs), self.test_image_scaled.cpu())
+            batch_test_img_mse = img2mse(torch.from_numpy(rgbs), self.test_image_scaled.cpu()[:first_k])
             batch_test_img_psnr = mse2psnr(batch_test_img_mse)
 
             self.tfb_viz.vis_scalars(global_step, [batch_test_img_psnr, batch_test_img_mse],
@@ -1204,20 +1226,30 @@ class SSRTrainer(object):
         self.tfb_viz.tb_writer.add_image('Test/disps', np.expand_dims(disps, -1), global_step, dataformats='NHWC')
 
         # evaluate depths
-        depth_metrics_dic = calculate_depth_metrics(depth_trgt=self.test_depth_scaled, depth_pred=deps)
+        depth_metrics_dic = calculate_depth_metrics(depth_trgt=self.test_depth_scaled[:first_k], depth_pred=deps)
         self.tfb_viz.vis_scalars(global_step,
                                  list(depth_metrics_dic.values()),
                                  ["Test/Metric/" + k for k in list(depth_metrics_dic.keys())])
+
+
         if self.enable_semantic:
             self.tfb_viz.tb_writer.add_image('Test/vis_sem_label', vis_sems, global_step, dataformats='NHWC')
             self.tfb_viz.tb_writer.add_image('Test/vis_sem_uncertainty', vis_sem_uncers, global_step,
                                              dataformats='NHWC')
 
             # add segmentation quantative metrics during testung into tfb
+
             miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = \
-                calculate_segmentation_metrics(true_labels=self.test_semantic_scaled, predicted_labels=sems,
+                calculate_segmentation_metrics(true_labels=self.test_semantic_scaled[:first_k], predicted_labels=sems,
                                                number_classes=self.num_valid_semantic_class,
                                                ignore_label=self.ignore_label)
+
+            print(f'miou_test: {miou_test}')
+            print(f'miou_test_validclass: {miou_test_validclass}')
+            print(f'total_accuracy_test: {total_accuracy_test}')
+            print(f'class_average_accuracy_test: {class_average_accuracy_test}')
+            print(f'ious_test: {ious_test}')
+
             # number_classes=self.num_semantic_class-1 to exclude void class
             self.tfb_viz.vis_scalars(global_step,
                                      [miou_test, miou_test_validclass, total_accuracy_test,
@@ -1225,22 +1257,8 @@ class SSRTrainer(object):
                                      ['Test/Metric/mIoU', 'Test/Metric/mIoU_validclass', 'Test/Metric/total_acc',
                                       'Test/Metric/avg_acc'])
 
-            if dataset_type == "replica_nyu_cnn":
-                # we also evaluate the rendering against the trained CNN labels in addition to perfect GT labels
-                miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = \
-                    calculate_segmentation_metrics(true_labels=self.test_semantic_gt_scaled, predicted_labels=sems,
-                                                   number_classes=self.num_valid_semantic_class,
-                                                   ignore_label=self.ignore_label)
-                self.tfb_viz.vis_scalars(global_step,
-                                         [miou_test, miou_test_validclass, total_accuracy_test,
-                                          class_average_accuracy_test],
-                                         ['Test/Metric/mIoU_GT', 'Test/Metric/mIoU_GT_validclass',
-                                          'Test/Metric/total_acc_GT', 'Test/Metric/avg_acc_GT'])
 
-                tqdm.write(f"[Testing Metric against GT Preds] Iter: {global_step} "
-                           f"mIoU: {miou_test}, total_acc: {total_accuracy_test}, avg_acc: {class_average_accuracy_test}")
-
-    def render_path(self, rays, save_dir=None):
+    def render_path(self, rays, ade_semantic_classes, ade2replica, save_dir=None):
 
         rgbs = []
         disps = []
@@ -1293,6 +1311,32 @@ class SSRTrainer(object):
 
                 if self.enable_semantic:
                     sem_label_fine = logits_2_label(output_dict["sem_logits_fine"])
+
+                    # semantic = ade_semantic_classes[sem_label_fine+1].astype('int') - 1
+                    # semantic_old = deepcopy(semantic)
+                    # semantic_unique = np.unique(semantic)
+                    # for ade in semantic_unique:
+                    #     if ade in ade2replica:
+                    #         semantic[semantic_old == ade] = ade2replica[ade]
+                    #     else:
+                    #         semantic[semantic_old == ade] = -1
+
+                    # semantic += 1
+
+                    # semantic_unique = np.unique(semantic)
+                    # semantic_old = deepcopy(semantic)
+                    # for replica in semantic_unique:
+                    #     index = torch.where(self.semantic_classes == replica)[0]
+                    #     if len(index) == 0:
+                    #         semantic[semantic_old == replica] = 0
+                    #     else:
+                    #         index = index[0]
+                    #         semantic[semantic_old == replica] = index
+
+
+                    # semantic -= 1
+                    # sem_label_fine = torch.from_numpy(semantic)
+
                     sem_uncertainty_fine = logits_2_uncertainty(output_dict["sem_logits_fine"])
                     vis_sem_label_fine = self.valid_colour_map[sem_label_fine]
                     # shift pred label by +1 to shift the first valid class to use the first valid colour-map instead of the void colour-map
