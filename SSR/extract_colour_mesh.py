@@ -43,7 +43,7 @@ def render_fn(trainer, rays, chunk):
 
 def train():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config_file', type=str, default="/home/shuaifeng/Documents/PhD_Research/CodeRelease/SemanticSceneRepresentations/SSR/configs/SSR_room0_config_test.yaml", help='config file name.')
+    parser.add_argument('--config_file', type=str, default="SSR/configs/SSR_room0_config.yaml", help='config file name.')
 
     parser.add_argument('--mesh_dir', type=str, required=True, help='Path to scene file, e.g., ROOT_PATH/Replica/mesh/room_0/')
     parser.add_argument('--training_data_dir', type=str, required=True, help='Path to rendered data.')
@@ -68,11 +68,11 @@ def train():
         config["experiment"]["gpu"] = args.gpu
     print("Experiment GPU is {}.".format(config["experiment"]["gpu"]))
     trainer.select_gpus(config["experiment"]["gpu"])
-    
+
 
     to8b_np = lambda x: (255 * np.clip(x, 0, 1)).astype(np.uint8)
     logits_2_label = lambda x: torch.argmax(torch.nn.functional.softmax(x, dim=-1),dim=-1)
-        
+
     # Cast intrinsics to right types
     ssr_trainer = trainer.SSRTrainer(config)
 
@@ -88,7 +88,7 @@ def train():
     info_mesh_file = os.path.join(mesh_dir, "habitat", "info_semantic.json")
     with open(info_mesh_file, "r") as f:
         annotations = json.load(f)
-        
+
     instance_id_to_semantic_label_id = np.array(annotations["id_to_label"])
     instance_id_to_semantic_label_id[instance_id_to_semantic_label_id<=0] = 0
     semantic_classes = np.unique(instance_id_to_semantic_label_id)
@@ -100,7 +100,7 @@ def train():
     step = 5
     ids = list(range(total_num))
     train_ids = list(range(0, total_num, step))
-    test_ids = [x+2 for x in train_ids]    
+    test_ids = [x+2 for x in train_ids]
 
     replica_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=training_data_dir,
                                                                 train_ids=train_ids, test_ids=test_ids,
@@ -123,9 +123,9 @@ def train():
     ckpt = torch.load(ckpt_path)
 
     start = ckpt['global_step']
-    ssr_trainer.ssr_net_coarse.load_state_dict(ckpt['network_coarse_state_dict'])
-    ssr_trainer.ssr_net_fine.load_state_dict(ckpt['network_fine_state_dict'])
-    ssr_trainer.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+    ssr_trainer.ssr_net_coarse.load_state_dict(ckpt['network_coarse_state_dict'], strict=False)
+    ssr_trainer.ssr_net_fine.load_state_dict(ckpt['network_fine_state_dict'], strict=False)
+    # ssr_trainer.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
     ssr_trainer.training = False  # enable testing mode before rendering results, need to set back during training!
     ssr_trainer.ssr_net_coarse.eval()
     ssr_trainer.ssr_net_fine.eval()
@@ -135,7 +135,7 @@ def train():
     threshold = 0.2
     draw_cameras = True
     grid_dim = args.grid_dim
-            
+
     train_Ts_np =  replica_data_loader.train_samples["T_wc"]
     mesh_file = os.path.join(mesh_dir,"mesh.ply")
     assert os.path.exists(mesh_file)
@@ -149,13 +149,13 @@ def train():
     grid_query_pts, scene_scale = grid_within_bound([-1.0, 1.0], scene_extents, scene_transform, grid_dim=grid_dim)
 
     grid_query_pts = grid_query_pts.cuda().reshape(-1,1,3) # Num_rays, 1, 3-xyz
-    viewdirs = torch.zeros_like(grid_query_pts).reshape(-1, 3) 
+    viewdirs = torch.zeros_like(grid_query_pts).reshape(-1, 3)
     st = time.time()
     print("Initialise Trimesh Scenes")
 
     with torch.no_grad():
         chunk = 1024
-        run_MLP_fn  =  lambda pts: run_network(inputs=pts, viewdirs=torch.zeros_like(pts).squeeze(1), 
+        run_MLP_fn  =  lambda pts: run_network(inputs=pts, viewdirs=torch.zeros_like(pts).squeeze(1),
             fn=ssr_trainer.ssr_net_fine, embed_fn=ssr_trainer.embed_fn,
             embeddirs_fn=ssr_trainer.embeddirs_fn, netchunk=int(2048*128))
 
@@ -223,7 +223,7 @@ def train():
     print("Using Normals for colour predictions!")
     print()
     print("###########################################")
-    
+
     ## use normal vector method as suggested by the author, see https://github.com/bmild/nerf/issues/44
     mesh_recon_save_dir = os.path.join(mesh_recon_save_dir,"use_vertex_normal")
     os.makedirs(mesh_recon_save_dir, exist_ok=True)
