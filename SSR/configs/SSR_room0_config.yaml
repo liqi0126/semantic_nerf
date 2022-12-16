@@ -38,7 +38,7 @@ render:
 train:
     lrate: 5e-4
     lrate_decay: 250e3
-    N_iters: 200000
+    N_iters: 2000
     wgt_sem: 4e-2
 
 
@@ -46,6 +46,6 @@ train:
 logging: # logging/saving options
     step_log_print: 1  # 'frequency of console print'
     step_log_tfb: 500
-    step_save_ckpt: 20000
-    step_val: 5000 # frequency of rendering on unseen data
-    step_vis_train: 5000
+    step_save_ckpt: 2000
+    step_val: 2000 # frequency of rendering on unseen data
+    step_vis_train: 2000
