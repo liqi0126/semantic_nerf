@@ -874,7 +874,7 @@ class SSRTrainer(object):
         # Create optimizer
         optimizer = torch.optim.Adam(params=grad_vars, lr=self.lrate)
 
-        ckpt = torch.load('rgb_only/checkpoints/200000.ckpt')
+        ckpt = torch.load('results/rgb_only/checkpoints/200000.ckpt')
         model.load_state_dict(ckpt['network_coarse_state_dict'], strict=False)
         model_fine.load_state_dict(ckpt['network_fine_state_dict'], strict=False)
 
