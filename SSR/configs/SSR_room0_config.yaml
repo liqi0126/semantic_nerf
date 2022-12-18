@@ -1,7 +1,7 @@
 
 experiment:
   scene_file: "Replica_Dataset/semantic_info/room_0/" # room_0,room_01, etc.
-  save_dir: "PATHtoLOGS"  # where to store ckpts and rendering
+  save_dir: "results/clip"  # where to store ckpts and rendering
   dataset_dir: "Replica_Dataset/room_0/Sequence_1/"
   convention: "opencv"
   width: 320
