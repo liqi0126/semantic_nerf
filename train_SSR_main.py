@@ -81,7 +81,7 @@ def train():
         print("----- Replica Dataset -----")
 
         total_num = 900
-        step = 50
+        step = 5
         train_ids = list(range(0, total_num, step))
         test_ids = [x+step//2 for x in train_ids]
         #add ids to config for later saving.

@@ -36,7 +36,7 @@ def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024 * 64
 
 
 
-def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, enable_semantic=True, 
+def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, enable_semantic=True,
                 num_sem_class=0, endpoint_feat=False):
     """Transforms model's predictions to semantically meaningful values.
     Args:
@@ -44,7 +44,7 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, enable_s
         z_vals: [num_rays, num_samples along ray]. Integration time.
         rays_d: [num_rays, 3]. Direction of each ray.
         raw_noise_std: random perturbations added to ray samples
-        
+
     Returns:
         rgb_map: [num_rays, 3]. Estimated RGB color of a ray.
         disp_map: [num_rays]. Disparity map. Inverse of depth map.
@@ -83,7 +83,7 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, enable_s
     if enable_semantic:
         assert num_sem_class>0
         # https://discuss.pytorch.org/t/multi-class-cross-entropy-loss-and-softmax-in-pytorch/24920/2
-        sem_logits = raw[..., 4:4+num_sem_class]  # [N_rays, N_samples, num_class]
+        sem_logits = raw[..., 4:]  # [N_rays, N_samples, num_class]
         sem_map = torch.sum(weights[..., None] * sem_logits, -2)  # [N_rays, num_class]
     else:
         sem_map = torch.tensor(0)
@@ -103,6 +103,6 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, enable_s
         rgb_map = rgb_map + (1.-acc_map[..., None])
         if enable_semantic:
             sem_map = sem_map + (1.-acc_map[..., None])
-    
+
     return rgb_map, disp_map, acc_map, weights, depth_map, sem_map, feat_map
 

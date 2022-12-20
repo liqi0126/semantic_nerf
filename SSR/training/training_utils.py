@@ -62,9 +62,9 @@ def calculate_segmentation_metrics(true_labels, predicted_labels, number_classes
     true_labels = true_labels.flatten()
     predicted_labels = predicted_labels.flatten()
     valid_pix_ids = true_labels!=ignore_label
-    predicted_labels = predicted_labels[valid_pix_ids] 
+    predicted_labels = predicted_labels[valid_pix_ids]
     true_labels = true_labels[valid_pix_ids]
-    
+
     conf_mat = confusion_matrix(true_labels, predicted_labels, labels=list(range(number_classes)))
     norm_conf_mat = np.transpose(
         np.transpose(conf_mat) / conf_mat.astype(np.float).sum(axis=1))
@@ -84,9 +84,17 @@ def calculate_segmentation_metrics(true_labels, predicted_labels, number_classes
     return miou, miou_valid_class, total_accuracy, class_average_accuracy, ious
 
 
+def get_logits(img_features, text_features):
+    img_features = img_features / img_features.norm(dim=-1, keepdim=True)
+    text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+
+    logits_per_image = img_features @ text_features.float().t()
+
+    return logits_per_image
+
 def calculate_depth_metrics(depth_trgt, depth_pred):
     """ Computes 2d metrics between two depth maps
-    
+
     Args:
         depth_pred: mxn np.array containing prediction
         depth_trgt: mxn np.array containing ground truth
