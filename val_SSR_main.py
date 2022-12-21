@@ -19,7 +19,7 @@ def train():
     # parser.add_argument('--config_file', type=str, default="/home/shuaifeng/Documents/PhD_Research/CodeRelease/SemanticSceneRepresentations/SSR/configs/SSR_room2_config_release.yaml",
     #                     help='config file name.')
     parser.add_argument('--resume', type=str)
-    parser.add_argument('--data', type=str)
+    parser.add_argument('--label_folder', type=str)
     parser.add_argument('--config_file', type=str, default="SSR/configs/SSR_room0_config.yaml",
                     help='config file name.')
     parser.add_argument('--dataset_type', type=str, default="replica", choices= ["replica", "replica_nyu_cnn", "scannet"],
@@ -95,38 +95,12 @@ def train():
                                                                     train_ids=train_ids, test_ids=test_ids,
                                                                     img_h=config["experiment"]["height"],
                                                                     img_w=config["experiment"]["width"],
-                                                                    semantic_folder=args.data)
+                                                                    semantic_folder=args.label_folder)
 
     replica_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=config["experiment"]["dataset_dir"],
                                                                     train_ids=train_ids, test_ids=test_ids,
                                                                     img_h=config["experiment"]["height"],
                                                                     img_w=config["experiment"]["width"])
-
-    ADE_CLASSES = [
-        'wall', 'building', 'sky', 'floor', 'tree', 'ceiling', 'road', 'bed',
-        'windowpane', 'grass', 'cabinet', 'sidewalk', 'person', 'earth',
-        'door', 'table', 'mountain', 'plant', 'curtain', 'chair', 'car',
-        'water', 'painting', 'sofa', 'shelf', 'house', 'sea', 'mirror', 'rug',
-        'field', 'armchair', 'seat', 'fence', 'desk', 'rock', 'wardrobe',
-                'lamp', 'bathtub', 'railing', 'cushion', 'base', 'box', 'column',
-                'signboard', 'chest of drawers', 'counter', 'sand', 'sink',
-                'skyscraper', 'fireplace', 'refrigerator', 'grandstand', 'path',
-                'stairs', 'runway', 'case', 'pool table', 'pillow', 'screen door',
-                'stairway', 'river', 'bridge', 'bookcase', 'blind', 'coffee table',
-                'toilet', 'flower', 'book', 'hill', 'bench', 'countertop', 'stove',
-                'palm', 'kitchen island', 'computer', 'swivel chair', 'boat', 'bar',
-                'arcade machine', 'hovel', 'bus', 'towel', 'light', 'truck', 'tower',
-                'chandelier', 'awning', 'streetlight', 'booth', 'television receiver',
-                'airplane', 'dirt track', 'apparel', 'pole', 'land', 'bannister',
-                'escalator', 'ottoman', 'bottle', 'buffet', 'poster', 'stage', 'van',
-                'ship', 'fountain', 'conveyer belt', 'canopy', 'washer', 'plaything',
-                'swimming pool', 'stool', 'barrel', 'basket', 'waterfall', 'tent',
-                'bag', 'minibike', 'cradle', 'oven', 'ball', 'food', 'step', 'tank',
-                'trade name', 'microwave', 'pot', 'animal', 'bicycle', 'lake',
-                'dishwasher', 'screen', 'blanket', 'sculpture', 'hood', 'sconce',
-                'vase', 'traffic light', 'tray', 'ashcan', 'fan', 'pier', 'crt screen',
-                'plate', 'monitor', 'bulletin board', 'shower', 'radiator', 'glass',
-                'clock', 'flag']
 
     ade2replica = {0: 92, 3: 39, 5: 30, 7: 6, 10: 17, 14: 36, 15: 79, 18: 29, 19: 19, 23: 75, 24: 70, 28: 97, 33: 33, 35: 95, 36: 46, 37: 3, 39: 28, 41: 14, 47: 73, 50: 66, 57: 60, 65: 83, 67: 12, 69: 7, 70: 32, 81: 54, 98: 13, 110: 77, 112: 2, 115: 99, 124: 50, 125: 64, 131: 10, 132: 69, 135: 90, 142: 63, 143: 51, 148: 21, 8: 96, 17: 43, 92: 23, 63: 11, 130: 86, 42: 59, 53: 76, 138: 9, 137: 24, 22: 58, 100: 58, 74: 35, 116: 8, 38: 42, 95: 42, 56: 79, 119: 37, 64: 79, 31: 19, 30: 19, 123: 98, 134: 18, 75: 19, 58: 36, 71: 48, 129: 48, 107: 48, 118: 48, 145: 72}
     ade2replica[3] = 97  # floor - rug
