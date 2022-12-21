@@ -9,7 +9,7 @@ from SSR.datasets.scannet import scannet_datasets
 
 from SSR.training import trainer
 
-from tqdm import  trange
+from tqdm import trange
 import time
 
 def train():
