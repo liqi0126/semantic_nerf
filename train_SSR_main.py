@@ -2,6 +2,7 @@ import yaml
 import os
 import argparse
 
+from SSR.datasets.palette import COCO_STUFF_MAP
 from SSR.datasets.replica import replica_datasets
 from SSR.datasets.scannet import scannet_datasets
 from SSR.datasets.replica_nyu import replica_nyu_cnn_datasets
@@ -95,6 +96,7 @@ def train():
         replica_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=config["experiment"]["dataset_dir"],
                                                                    train_ids=train_ids, test_ids=test_ids,
                                                                    label_folder=args.label_folder,
+                                                                   remap=COCO_STUFF_MAP,
                                                                    img_h=config["experiment"]["height"],
                                                                    img_w=config["experiment"]["width"])
 

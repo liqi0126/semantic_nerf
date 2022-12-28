@@ -11,6 +11,7 @@ from collections import defaultdict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from SSR.datasets.palette import PL_CLASS
 from SSR.models.semantic_nerf import get_embedder, Semantic_NeRF
 from SSR.models.rays import sampling_index, sample_pdf, create_rays
 from SSR.training.training_utils import batchify_rays, calculate_segmentation_metrics, calculate_depth_metrics
@@ -161,12 +162,8 @@ class SSRTrainer(object):
         self.num_valid_semantic_class = self.num_semantic_class - 1  # exclude void class
         assert self.num_semantic_class==data.num_semantic_class
 
-        json_class_mapping = os.path.join(self.config["experiment"]["scene_file"], "info_semantic.json")
-        with open(json_class_mapping, "r") as f:
-            annotations = json.load(f)
-        instance_id_to_semantic_label_id = np.array(annotations["id_to_label"])
         # total_num_classes = len(annotations["classes"])
-        total_num_classes = 134
+        total_num_classes = 1 + len(PL_CLASS)
         # assert total_num_classes==101  # excluding void we have 102 classes
         # assert self.num_valid_semantic_class == np.sum(np.unique(instance_id_to_semantic_label_id) >=0 )
 
@@ -176,35 +173,10 @@ class SSRTrainer(object):
 
         # plot semantic label legend
         # class_name_string = ["voild"] + [x["name"] for x in annotations["classes"] if x["id"] in np.unique(data.semantic)]
-        class_name_string = ["void"] + [
-                'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train',
-                ' truck', 'boat', 'traffic light', 'fire hydrant', 'stop sign',
-                'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep',
-                'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella',
-                'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard',
-                'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard',
-                'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup', 'fork',
-                'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange',
-                'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair',
-                'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv',
-                'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave',
-                'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase',
-                'scissors', 'teddy bear', 'hair drier', 'toothbrush', 'banner',
-                'blanket', 'bridge', 'cardboard', 'counter', 'curtain', 'door-stuff',
-                'floor-wood', 'flower', 'fruit', 'gravel', 'house', 'light',
-                'mirror-stuff', 'net', 'pillow', 'platform', 'playingfield',
-                'railroad', 'river', 'road', 'roof', 'sand', 'sea', 'shelf', 'snow',
-                'stairs', 'tent', 'towel', 'wall-brick', 'wall-stone', 'wall-tile',
-                'wall-wood', 'water-other', 'window-blind', 'window-other',
-                'tree-merged', 'fence-merged', 'ceiling-merged', 'sky-other-merged',
-                'cabinet-merged', 'table-merged', 'floor-other-merged',
-                'pavement-merged', 'mountain-merged', 'grass-merged', 'dirt-merged',
-                'paper-merged', 'food-other-merged', 'building-other-merged',
-                'rock-merged', 'wall-other-merged', 'rug-merged'
-            ]
+        class_name_string = ["void"] + PL_CLASS
 
         legend_img_arr = image_utils.plot_semantic_legend(data.semantic_classes, class_name_string,
-        colormap=label_colormap(total_num_classes+1), save_path=self.save_dir)
+                                                          colormap=label_colormap(total_num_classes+1), save_path=self.save_dir)
         # total_num_classes +1 to include void class
 
         # remap different semantic classes to continuous integers from 0 to num_class-1
@@ -693,7 +665,6 @@ class SSRTrainer(object):
                 sematic_available_flag = self.mask_ids[index_batch] # semantic available if mask_id is 1 (train with rgb loss and semantic loss) else 0 (train with rgb loss only)
                 gt_semantic = semantic.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
                 gt_semantic = gt_semantic.cuda()
-                import ipdb; ipdb.set_trace()
                 gt_instance = instance.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
                 gt_instance = gt_instance.cuda()
         else:  # sample from all random pixels

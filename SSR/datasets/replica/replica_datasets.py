@@ -6,9 +6,18 @@ from torch.utils.data import Dataset
 import cv2
 import imageio
 from imgviz import label_colormap
+from copy import deepcopy
+
+
+def semantic_remap(semantic, remap):
+    new = deepcopy(semantic)
+    for key in remap.keys():
+        new[semantic-1 == key] = remap[key]+1
+    return new
+
 
 class ReplicaDatasetCache(Dataset):
-    def __init__(self, data_dir, train_ids, test_ids, label_folder, img_h=None, img_w=None):
+    def __init__(self, data_dir, train_ids, test_ids, label_folder, remap, img_h=None, img_w=None):
 
         traj_file = os.path.join(data_dir, "traj_w_c.txt")
         self.rgb_dir = os.path.join(data_dir, "rgb")
@@ -47,6 +56,7 @@ class ReplicaDatasetCache(Dataset):
             image = cv2.imread(self.rgb_list[idx])[:,:,::-1] / 255.0  # change from BGR uinit 8 to RGB float
             depth = cv2.imread(self.depth_list[idx], cv2.IMREAD_UNCHANGED) / 1000.0  # uint16 mm depth, then turn depth from mm to meter
             semantic = cv2.imread(self.semantic_list[idx], cv2.IMREAD_UNCHANGED)
+            semantic = semantic_remap(semantic, remap)
             if self.semantic_instance_dir is not None:
                 instance = cv2.imread(self.instance_list[idx], cv2.IMREAD_UNCHANGED) # uint16
 
@@ -73,6 +83,7 @@ class ReplicaDatasetCache(Dataset):
             image = cv2.imread(self.rgb_list[idx])[:,:,::-1] / 255.0  # change from BGR uinit 8 to RGB float
             depth = cv2.imread(self.depth_list[idx], cv2.IMREAD_UNCHANGED) / 1000.0  # uint16 mm depth, then turn depth from mm to meter
             semantic = cv2.imread(self.semantic_list[idx], cv2.IMREAD_UNCHANGED)
+            semantic = semantic_remap(semantic, remap)
             if self.semantic_instance_dir is not None:
                 instance = cv2.imread(self.instance_list[idx], cv2.IMREAD_UNCHANGED) # uint16
 
