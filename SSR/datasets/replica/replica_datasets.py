@@ -14,10 +14,9 @@ class ReplicaDatasetCache(Dataset):
         self.rgb_dir = os.path.join(data_dir, "rgb")
         self.depth_dir = os.path.join(data_dir, "depth")  # depth is in mm uint
         self.semantic_class_dir = os.path.join(data_dir, label_folder)
-        self.semantic_instance_dir = os.path.join(data_dir, "semantic_instance")
+        self.semantic_instance_dir = os.path.join(data_dir, label_folder)
         if not os.path.exists(self.semantic_instance_dir):
             self.semantic_instance_dir = None
-
 
         self.train_ids = train_ids
         self.train_num = len(train_ids)

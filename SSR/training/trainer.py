@@ -109,6 +109,7 @@ class SSRTrainer(object):
 
     def set_params(self):
         self.enable_semantic = self.config["experiment"]["enable_semantic"]
+        self.enable_instance = False
 
         #render options
         self.n_rays = eval(self.config["render"]["N_rays"])  if isinstance(self.config["render"]["N_rays"], str) \
@@ -165,7 +166,7 @@ class SSRTrainer(object):
             annotations = json.load(f)
         instance_id_to_semantic_label_id = np.array(annotations["id_to_label"])
         # total_num_classes = len(annotations["classes"])
-        total_num_classes = 150
+        total_num_classes = 134
         # assert total_num_classes==101  # excluding void we have 102 classes
         # assert self.num_valid_semantic_class == np.sum(np.unique(instance_id_to_semantic_label_id) >=0 )
 
@@ -175,33 +176,33 @@ class SSRTrainer(object):
 
         # plot semantic label legend
         # class_name_string = ["voild"] + [x["name"] for x in annotations["classes"] if x["id"] in np.unique(data.semantic)]
-        # class_name_string = ["void"] + [x["name"] for x in annotations["classes"]]
         class_name_string = ["void"] + [
-            'wall', 'building', 'sky', 'floor', 'tree', 'ceiling', 'road', 'bed ',
-            'windowpane', 'grass', 'cabinet', 'sidewalk', 'person', 'earth',
-            'door', 'table', 'mountain', 'plant', 'curtain', 'chair', 'car',
-            'water', 'painting', 'sofa', 'shelf', 'house', 'sea', 'mirror', 'rug',
-            'field', 'armchair', 'seat', 'fence', 'desk', 'rock', 'wardrobe',
-                    'lamp', 'bathtub', 'railing', 'cushion', 'base', 'box', 'column',
-                    'signboard', 'chest of drawers', 'counter', 'sand', 'sink',
-                    'skyscraper', 'fireplace', 'refrigerator', 'grandstand', 'path',
-                    'stairs', 'runway', 'case', 'pool table', 'pillow', 'screen door',
-                    'stairway', 'river', 'bridge', 'bookcase', 'blind', 'coffee table',
-                    'toilet', 'flower', 'book', 'hill', 'bench', 'countertop', 'stove',
-                    'palm', 'kitchen island', 'computer', 'swivel chair', 'boat', 'bar',
-                    'arcade machine', 'hovel', 'bus', 'towel', 'light', 'truck', 'tower',
-                    'chandelier', 'awning', 'streetlight', 'booth', 'television receiver',
-                    'airplane', 'dirt track', 'apparel', 'pole', 'land', 'bannister',
-                    'escalator', 'ottoman', 'bottle', 'buffet', 'poster', 'stage', 'van',
-                    'ship', 'fountain', 'conveyer belt', 'canopy', 'washer', 'plaything',
-                    'swimming pool', 'stool', 'barrel', 'basket', 'waterfall', 'tent',
-                    'bag', 'minibike', 'cradle', 'oven', 'ball', 'food', 'step', 'tank',
-                    'trade name', 'microwave', 'pot', 'animal', 'bicycle', 'lake',
-                    'dishwasher', 'screen', 'blanket', 'sculpture', 'hood', 'sconce',
-                    'vase', 'traffic light', 'tray', 'ashcan', 'fan', 'pier', 'crt screen',
-                    'plate', 'monitor', 'bulletin board', 'shower', 'radiator', 'glass',
-                    'clock', 'flag']
-        # class_name_string = ["void"] + [x["name"] for x in annotations["classes"]]
+                'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train',
+                ' truck', 'boat', 'traffic light', 'fire hydrant', 'stop sign',
+                'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep',
+                'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella',
+                'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard',
+                'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard',
+                'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup', 'fork',
+                'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange',
+                'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair',
+                'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv',
+                'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave',
+                'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase',
+                'scissors', 'teddy bear', 'hair drier', 'toothbrush', 'banner',
+                'blanket', 'bridge', 'cardboard', 'counter', 'curtain', 'door-stuff',
+                'floor-wood', 'flower', 'fruit', 'gravel', 'house', 'light',
+                'mirror-stuff', 'net', 'pillow', 'platform', 'playingfield',
+                'railroad', 'river', 'road', 'roof', 'sand', 'sea', 'shelf', 'snow',
+                'stairs', 'tent', 'towel', 'wall-brick', 'wall-stone', 'wall-tile',
+                'wall-wood', 'water-other', 'window-blind', 'window-other',
+                'tree-merged', 'fence-merged', 'ceiling-merged', 'sky-other-merged',
+                'cabinet-merged', 'table-merged', 'floor-other-merged',
+                'pavement-merged', 'mountain-merged', 'grass-merged', 'dirt-merged',
+                'paper-merged', 'food-other-merged', 'building-other-merged',
+                'rock-merged', 'wall-other-merged', 'rug-merged'
+            ]
+
         legend_img_arr = image_utils.plot_semantic_legend(data.semantic_classes, class_name_string,
         colormap=label_colormap(total_num_classes+1), save_path=self.save_dir)
         # total_num_classes +1 to include void class
@@ -238,6 +239,8 @@ class SSRTrainer(object):
         # pose
         self.train_Ts = torch.from_numpy(train_samples["T_wc"]).float()
 
+        # instance
+        self.train_instance = torch.from_numpy(train_samples["instance"])
 
         #####test data#####
         # rgb
@@ -268,6 +271,9 @@ class SSRTrainer(object):
         self.test_semantic_scaled = self.test_semantic_scaled.cpu().numpy() - 1 # shift void class from value 0 to -1, to match self.ignore_label
         # pose
         self.test_Ts = torch.from_numpy(test_samples["T_wc"]).float()  # [num_test, 4, 4]
+
+        # instance
+        self.test_instance = torch.from_numpy(test_samples["instance"])
 
         if gpu is True:
             self.train_image = self.train_image.cuda()
@@ -657,12 +663,16 @@ class SSRTrainer(object):
             if self.enable_semantic:
                 depth = self.train_depth
                 semantic = self.train_semantic
+            if self.enable_instance:
+                instance = self.train_instance
             sample_num = self.num_train
         elif mode == "test":
             image = self.test_image
             if self.enable_semantic:
                 depth = self.test_depth
                 semantic = self.test_semantic
+            if self.enable_instance:
+                instance = self.test_instance
             sample_num = self.num_test
         elif mode == "vis":
             assert False
@@ -683,6 +693,9 @@ class SSRTrainer(object):
                 sematic_available_flag = self.mask_ids[index_batch] # semantic available if mask_id is 1 (train with rgb loss and semantic loss) else 0 (train with rgb loss only)
                 gt_semantic = semantic.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
                 gt_semantic = gt_semantic.cuda()
+                import ipdb; ipdb.set_trace()
+                gt_instance = instance.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
+                gt_instance = gt_instance.cuda()
         else:  # sample from all random pixels
 
             index_hw = self.rand_idx[self.i_batch:self.i_batch+self.n_rays]
@@ -694,6 +707,8 @@ class SSRTrainer(object):
                 gt_depth = depth.reshape(-1)[index_hw]
                 gt_semantic = semantic.reshape(-1)[index_hw]
                 gt_semantic = gt_semantic.cuda()
+                gt_instance = instance.reshape(-1)[index_hw]
+                gt_instance = gt_instance.cuda()
 
             self.i_batch += self.n_rays
             if self.i_batch >= total_ray_num:
@@ -857,7 +872,7 @@ class SSRTrainer(object):
                                                         scalar_factor=1)
         output_ch = 5 if self.N_importance > 0 else 4
         skips = [4]
-        model = nerf_model(enable_semantic = self.enable_semantic, num_semantic_classes=self.num_valid_semantic_class,
+        model = nerf_model(enable_semantic = self.enable_semantic, enable_instance=self.enable_instance, num_semantic_classes=self.num_valid_semantic_class,
                      D=self.config["model"]["netdepth"], W=self.config["model"]["netwidth"],
                      input_ch=input_ch, output_ch=output_ch, skips=skips,
                      input_ch_views=input_ch_views, use_viewdirs=self.config["render"]["use_viewdirs"]).cuda()
@@ -865,7 +880,7 @@ class SSRTrainer(object):
 
         model_fine = None
         if self.N_importance > 0:
-            model_fine = nerf_model(enable_semantic = self.enable_semantic, num_semantic_classes=self.num_valid_semantic_class,
+            model_fine = nerf_model(enable_semantic = self.enable_semantic, enable_instance=self.enable_instance, num_semantic_classes=self.num_valid_semantic_class,
                               D=self.config["model"]["netdepth_fine"], W=self.config["model"]["netwidth_fine"],
                               input_ch=input_ch, output_ch=output_ch, skips=skips,
                               input_ch_views=input_ch_views, use_viewdirs=self.config["render"]["use_viewdirs"]).cuda()
@@ -880,12 +895,12 @@ class SSRTrainer(object):
 
 
         for n, p in model.named_parameters():
-            if 'semantic' not in n:
+            if 'semantic' not in n and 'instance' not in n:
                 p.requires_grad = False
 
 
         for n, p in model_fine.named_parameters():
-            if 'semantic' not in n:
+            if 'semantic' not in n and 'instance' not in n:
                 p.requires_grad = False
 
         self.ssr_net_coarse = model
