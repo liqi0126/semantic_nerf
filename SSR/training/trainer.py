@@ -665,6 +665,7 @@ class SSRTrainer(object):
                 sematic_available_flag = self.mask_ids[index_batch] # semantic available if mask_id is 1 (train with rgb loss and semantic loss) else 0 (train with rgb loss only)
                 gt_semantic = semantic.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
                 gt_semantic = gt_semantic.cuda()
+            if self.enable_instance:
                 gt_instance = instance.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
                 gt_instance = gt_instance.cuda()
         else:  # sample from all random pixels
@@ -678,6 +679,7 @@ class SSRTrainer(object):
                 gt_depth = depth.reshape(-1)[index_hw]
                 gt_semantic = semantic.reshape(-1)[index_hw]
                 gt_semantic = gt_semantic.cuda()
+            if self.enable_instance:
                 gt_instance = instance.reshape(-1)[index_hw]
                 gt_instance = gt_instance.cuda()
 
