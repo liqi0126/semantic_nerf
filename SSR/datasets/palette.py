@@ -188,6 +188,7 @@ REPLICA_ROOM_0_CLASSES = ['backpack', 'base-cabinet', 'basket', 'bathtub', 'beam
 REPLICA_MAP = {
     92: 0,  # wall -> wall
     39: 1,  # floor -> floor
+    97: 1,  # rug -> floor
     1: 2,  # base-cabinet -> cabinet
     17: 2,  # cabinet -> cabinet
     93: 2,  # wall-cabinet -> cabinet
@@ -291,7 +292,7 @@ REPLICA_MAP = {
 
 
 for i, cls in enumerate(REPLICA_ROOM_0_CLASSES):
-    # if 'bag' in cls:
-    #     print(i, cls)
-    if i not in REPLICA_MAP.keys():
-        print(f"{i}: 20,")
+    if 'rug' in cls:
+        print(i, cls)
+    # if i not in REPLICA_MAP.keys():
+    #     print(f"{i}: 20,")
