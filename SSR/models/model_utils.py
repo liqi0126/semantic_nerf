@@ -36,15 +36,15 @@ def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024 * 64
 
 
 
-def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, enable_semantic=True, 
-                num_sem_class=0, endpoint_feat=False):
+def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, enable_semantic=True,
+                num_sem_class=0, enable_instance=False, num_instance=0, endpoint_feat=False):
     """Transforms model's predictions to semantically meaningful values.
     Args:
         raw: [num_rays, num_samples along ray, 4]. Prediction from model.
         z_vals: [num_rays, num_samples along ray]. Integration time.
         rays_d: [num_rays, 3]. Direction of each ray.
         raw_noise_std: random perturbations added to ray samples
-        
+
     Returns:
         rgb_map: [num_rays, 3]. Estimated RGB color of a ray.
         disp_map: [num_rays]. Disparity map. Inverse of depth map.
@@ -88,6 +88,12 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, enable_s
     else:
         sem_map = torch.tensor(0)
 
+    if enable_instance:
+        assert num_instance > 0
+        inst_logits = raw[..., 4+num_sem_class:4+num_sem_class+num_instance]
+        inst_map = torch.sum(weights[..., None] * inst_logits, -2)
+    else:
+        inst_map = torch.tensor(0)
 
     if endpoint_feat:
         feat = raw[..., -128:] # [N_rays, N_samples, feat_dim] take the last 128 dim from predictions
@@ -103,6 +109,8 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, enable_s
         rgb_map = rgb_map + (1.-acc_map[..., None])
         if enable_semantic:
             sem_map = sem_map + (1.-acc_map[..., None])
-    
-    return rgb_map, disp_map, acc_map, weights, depth_map, sem_map, feat_map
+        if enable_instance:
+            inst_map = inst_map + (1.-acc_map[..., None])
+
+    return rgb_map, disp_map, acc_map, weights, depth_map, sem_map, inst_map, feat_map
 

@@ -17,8 +17,7 @@ def semantic_remap(semantic, remap):
 
 
 class ReplicaDatasetCache(Dataset):
-    def __init__(self, data_dir, train_ids, test_ids, label_folder, remap, img_h=None, img_w=None):
-
+    def __init__(self, data_dir, train_ids, test_ids, label_folder, remap, img_h=None, img_w=None, enable_instance=True):
         traj_file = os.path.join(data_dir, "traj_w_c.txt")
         self.rgb_dir = os.path.join(data_dir, "rgb")
         self.depth_dir = os.path.join(data_dir, "depth")  # depth is in mm uint
@@ -40,7 +39,7 @@ class ReplicaDatasetCache(Dataset):
         self.rgb_list = sorted(glob.glob(self.rgb_dir + '/rgb*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
         self.depth_list = sorted(glob.glob(self.depth_dir + '/depth*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
         self.semantic_list = sorted(glob.glob(self.semantic_class_dir + '/semantic_class_*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
-        if self.semantic_instance_dir is not None:
+        if self.semantic_instance_dir is not None and enable_instance:
             self.instance_list = sorted(glob.glob(self.semantic_instance_dir + '/semantic_instance_*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
 
         self.train_samples = {'image': [], 'depth': [],
@@ -57,7 +56,7 @@ class ReplicaDatasetCache(Dataset):
             depth = cv2.imread(self.depth_list[idx], cv2.IMREAD_UNCHANGED) / 1000.0  # uint16 mm depth, then turn depth from mm to meter
             semantic = cv2.imread(self.semantic_list[idx], cv2.IMREAD_UNCHANGED)
             semantic = semantic_remap(semantic, remap)
-            if self.semantic_instance_dir is not None:
+            if self.semantic_instance_dir is not None and enable_instance:
                 instance = cv2.imread(self.instance_list[idx], cv2.IMREAD_UNCHANGED) # uint16
 
             if (self.img_h is not None and self.img_h != image.shape[0]) or \
@@ -65,7 +64,7 @@ class ReplicaDatasetCache(Dataset):
                 image = cv2.resize(image, (self.img_w, self.img_h), interpolation=cv2.INTER_LINEAR)
                 depth = cv2.resize(depth, (self.img_w, self.img_h), interpolation=cv2.INTER_LINEAR)
                 semantic = cv2.resize(semantic, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
-                if self.semantic_instance_dir is not None:
+                if self.semantic_instance_dir is not None and enable_instance:
                     instance = cv2.resize(instance, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
 
             T_wc = self.Ts_full[idx]
@@ -73,7 +72,7 @@ class ReplicaDatasetCache(Dataset):
             self.train_samples["image"].append(image)
             self.train_samples["depth"].append(depth)
             self.train_samples["semantic"].append(semantic)
-            if self.semantic_instance_dir is not None:
+            if self.semantic_instance_dir is not None and enable_instance:
                 self.train_samples["instance"].append(instance)
             self.train_samples["T_wc"].append(T_wc)
 
@@ -84,7 +83,7 @@ class ReplicaDatasetCache(Dataset):
             depth = cv2.imread(self.depth_list[idx], cv2.IMREAD_UNCHANGED) / 1000.0  # uint16 mm depth, then turn depth from mm to meter
             semantic = cv2.imread(self.semantic_list[idx], cv2.IMREAD_UNCHANGED)
             semantic = semantic_remap(semantic, remap)
-            if self.semantic_instance_dir is not None:
+            if self.semantic_instance_dir is not None and enable_instance:
                 instance = cv2.imread(self.instance_list[idx], cv2.IMREAD_UNCHANGED) # uint16
 
             if (self.img_h is not None and self.img_h != image.shape[0]) or \
@@ -92,14 +91,14 @@ class ReplicaDatasetCache(Dataset):
                 image = cv2.resize(image, (self.img_w, self.img_h), interpolation=cv2.INTER_LINEAR)
                 depth = cv2.resize(depth, (self.img_w, self.img_h), interpolation=cv2.INTER_LINEAR)
                 semantic = cv2.resize(semantic, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
-                if self.semantic_instance_dir is not None:
+                if self.semantic_instance_dir is not None and enable_instance:
                     instance = cv2.resize(instance, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
             T_wc = self.Ts_full[idx]
 
             self.test_samples["image"].append(image)
             self.test_samples["depth"].append(depth)
             self.test_samples["semantic"].append(semantic)
-            if self.semantic_instance_dir is not None:
+            if self.semantic_instance_dir is not None and enable_instance:
                 self.test_samples["instance"].append(instance)
             self.test_samples["T_wc"].append(T_wc)
 

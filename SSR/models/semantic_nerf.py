@@ -76,7 +76,7 @@ class Semantic_NeRF(nn.Module):
     Compared to the NeRF class wich also predicts semantic logits from MLPs, here we make the semantic label only a function of 3D position
     instead of both positon and viewing directions.
     """
-    def __init__(self, enable_semantic, enable_instance, num_semantic_classes, D=8, W=256, input_ch=3, input_ch_views=3, output_ch=4, skips=[4], use_viewdirs=False,
+    def __init__(self, enable_semantic, enable_instance, num_semantic_classes, num_instance, D=8, W=256, input_ch=3, input_ch_views=3, output_ch=4, skips=[4], use_viewdirs=False,
                  ):
         super(Semantic_NeRF, self).__init__()
         """
@@ -110,7 +110,7 @@ class Semantic_NeRF(nn.Module):
             if enable_semantic:
                 self.semantic_linear = nn.Sequential(fc_block(W, W // 2), nn.Linear(W // 2, num_semantic_classes))
             if self.enable_instance:
-                self.instance_linear = nn.Sequential(fc_block(W, W // 2), nn.Linear(W // 2, 50))
+                self.instance_linear = nn.Sequential(fc_block(W, W // 2), nn.Linear(W // 2, num_instance))
             self.rgb_linear = nn.Linear(W // 2, 3)
         else:
             self.output_linear = nn.Linear(W, output_ch)
@@ -151,7 +151,7 @@ class Semantic_NeRF(nn.Module):
 
             if self.enable_instance:
                 outputs = torch.cat([rgb, alpha, sem_logits, inst_logits], -1)
-            if self.enable_semantic:
+            elif self.enable_semantic:
                 outputs = torch.cat([rgb, alpha, sem_logits], -1)
             else:
                 outputs = torch.cat([rgb, alpha], -1)

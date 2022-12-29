@@ -74,6 +74,7 @@ def train():
     if len(args.gpu)>0:
         config["experiment"]["gpu"] = args.gpu
     config['experiment']['save_dir'] = args.save_dir
+    config['enable_instance'] = False
 
     print("Experiment GPU is {}.".format(config["experiment"]["gpu"]))
     trainer.select_gpus(config["experiment"]["gpu"])
@@ -95,6 +96,7 @@ def train():
         # Todo: like nerf, creating sprial/test poses. Make training and test poses/ids interleaved
         replica_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=config["experiment"]["dataset_dir"],
                                                                    train_ids=train_ids, test_ids=test_ids,
+                                                                   enable_instance=config["enable_instance"],
                                                                    label_folder=args.label_folder,
                                                                    remap=COCO_STUFF_MAP,
                                                                    img_h=config["experiment"]["height"],
@@ -201,7 +203,7 @@ def train():
 
 
     # Create nerf model, init optimizer
-    ssr_trainer.create_ssr()
+    ssr_trainer.create_ssr(replica_data_loader.num_semantic_class - 1)
     # Create rays in world coordinates
     ssr_trainer.init_rays()
 

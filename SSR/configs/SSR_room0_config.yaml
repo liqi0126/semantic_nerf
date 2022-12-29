@@ -40,6 +40,7 @@ train:
     lrate_decay: 250e3
     N_iters: 20000
     wgt_sem: 4e-2
+    inst_sem: 4e-2
 
 
 

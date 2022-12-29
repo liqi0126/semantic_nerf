@@ -1,5 +1,7 @@
 import torch
+import scipy
 import numpy as np
+from copy import deepcopy
 from sklearn.metrics import confusion_matrix
 
 def batchify_rays(render_fn, rays_flat, chunk=1024 * 32):
@@ -15,6 +17,29 @@ def batchify_rays(render_fn, rays_flat, chunk=1024 * 32):
 
     all_ret = {k: torch.cat(all_ret[k], 0) for k in all_ret}
     return all_ret
+
+
+def remap_instance_label(num_instance, inst_logits, sampled_gt_instance):
+    with torch.no_grad():
+        prob = torch.softmax(inst_logits, -1).detach().cpu().numpy()
+        prob_matrix = np.zeros((num_instance, num_instance))
+        sampled_gt_instance_cpu = sampled_gt_instance.cpu().numpy()
+        for value in np.unique(sampled_gt_instance_cpu):
+            if value == 0:
+                continue
+
+            prob_matrix[value] = prob[sampled_gt_instance_cpu == value].mean(0)
+
+    _, nerf_instance_indices = scipy.optimize.linear_sum_assignment(-prob_matrix)
+
+    copied_sampled_gt_instance = deepcopy(sampled_gt_instance_cpu)
+    for val in np.unique(copied_sampled_gt_instance):
+        if val == 0:
+            continue
+        sampled_gt_instance_cpu[copied_sampled_gt_instance == val] = nerf_instance_indices[val]
+    sampled_gt_instance = torch.tensor(sampled_gt_instance_cpu).long().cuda()
+    sampled_gt_instance[sampled_gt_instance == 0] = -1
+    return sampled_gt_instance
 
 
 def batchify(fn, chunk):
@@ -62,9 +87,9 @@ def calculate_segmentation_metrics(true_labels, predicted_labels, number_classes
     true_labels = true_labels.flatten()
     predicted_labels = predicted_labels.flatten()
     valid_pix_ids = true_labels!=ignore_label
-    predicted_labels = predicted_labels[valid_pix_ids] 
+    predicted_labels = predicted_labels[valid_pix_ids]
     true_labels = true_labels[valid_pix_ids]
-    
+
     conf_mat = confusion_matrix(true_labels, predicted_labels, labels=list(range(number_classes)))
     norm_conf_mat = np.transpose(
         np.transpose(conf_mat) / conf_mat.astype(np.float).sum(axis=1))
@@ -86,7 +111,7 @@ def calculate_segmentation_metrics(true_labels, predicted_labels, number_classes
 
 def calculate_depth_metrics(depth_trgt, depth_pred):
     """ Computes 2d metrics between two depth maps
-    
+
     Args:
         depth_pred: mxn np.array containing prediction
         depth_trgt: mxn np.array containing ground truth

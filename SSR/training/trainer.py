@@ -6,7 +6,11 @@ import json
 import time
 import math
 import yaml
+import scipy
+
 from collections import defaultdict
+
+from copy import deepcopy
 
 import torch
 import torch.nn as nn
@@ -15,6 +19,8 @@ from SSR.datasets.palette import PL_CLASS
 from SSR.models.semantic_nerf import get_embedder, Semantic_NeRF
 from SSR.models.rays import sampling_index, sample_pdf, create_rays
 from SSR.training.training_utils import batchify_rays, calculate_segmentation_metrics, calculate_depth_metrics
+from SSR.training.training_utils import remap_instance_label
+
 from SSR.models.model_utils import raw2outputs
 from SSR.models.model_utils import run_network
 from SSR.visualisation.tensorboard_vis import TFVisualizer
@@ -110,7 +116,8 @@ class SSRTrainer(object):
 
     def set_params(self):
         self.enable_semantic = self.config["experiment"]["enable_semantic"]
-        self.enable_instance = False
+        self.enable_instance = self.config["enable_instance"]
+        self.num_instance = 50
 
         #render options
         self.n_rays = eval(self.config["render"]["N_rays"])  if isinstance(self.config["render"]["N_rays"], str) \
@@ -168,6 +175,7 @@ class SSRTrainer(object):
         # assert self.num_valid_semantic_class == np.sum(np.unique(instance_id_to_semantic_label_id) >=0 )
 
         colour_map_np = label_colormap(total_num_classes)[data.semantic_classes] # select the existing class from total colour map
+        self.inst_colour_map = torch.from_numpy(label_colormap(self.num_instance))
         self.colour_map = torch.from_numpy(colour_map_np)
         self.valid_colour_map  = torch.from_numpy(colour_map_np[1:,:]) # exclude the first colour map to colourise rendered segmentation without void index
 
@@ -693,9 +701,13 @@ class SSRTrainer(object):
         sampled_gt_rgb = gt_image
         if self.enable_semantic:
             sampled_gt_depth = gt_depth
-
             sampled_gt_semantic = gt_semantic.long()  # required long type for nn.NLL or nn.crossentropy
+        if self.enable_instance:
+            sampled_gt_instance = gt_instance.long()  # required long type for nn.NLL or nn.crossentropy
 
+        if self.enable_instance:
+            return sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sampled_gt_instance, sematic_available_flag
+        elif self.enable_semantic:
             return sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sematic_available_flag
         else:
             return sampled_rays, sampled_gt_rgb
@@ -777,9 +789,9 @@ class SSRTrainer(object):
         raw_noise_std = self.raw_noise_std if self.training else 0
         raw_coarse = run_network(pts_coarse_sampled, viewdirs, self.ssr_net_coarse,
                                  self.embed_fn, self.embeddirs_fn, netchunk=self.netchunk)
-        rgb_coarse, disp_coarse, acc_coarse, weights_coarse, depth_coarse, sem_logits_coarse, feat_map_coarse = \
+        rgb_coarse, disp_coarse, acc_coarse, weights_coarse, depth_coarse, sem_logits_coarse, inst_logits_coarse, feat_map_coarse = \
             raw2outputs(raw_coarse, z_vals, rays_d, raw_noise_std, self.white_bkgd, enable_semantic = self.enable_semantic,
-            num_sem_class = self.num_valid_semantic_class, endpoint_feat = False)
+            num_sem_class=self.num_valid_semantic_class, enable_instance=self.enable_instance, num_instance=self.num_instance, endpoint_feat = False)
 
 
         if self.N_importance > 0:
@@ -797,9 +809,9 @@ class SSRTrainer(object):
             raw_fine = run_network(pts_fine_sampled, viewdirs, lambda x: self.ssr_net_fine(x, self.endpoint_feat),
                         self.embed_fn, self.embeddirs_fn, netchunk=self.netchunk)
 
-            rgb_fine, disp_fine, acc_fine, weights_fine, depth_fine, sem_logits_fine, feat_map_fine = \
+            rgb_fine, disp_fine, acc_fine, weights_fine, depth_fine, sem_logits_fine, inst_logits_fine, feat_map_fine = \
                 raw2outputs(raw_fine, z_vals, rays_d, raw_noise_std, self.white_bkgd, enable_semantic = self.enable_semantic,
-                num_sem_class = self.num_valid_semantic_class, endpoint_feat = self.endpoint_feat)
+                num_sem_class=self.num_valid_semantic_class, enable_instance=self.enable_instance, num_instance=self.num_instance, endpoint_feat=self.endpoint_feat)
 
         ret = {}
         ret['raw_coarse'] = raw_coarse
@@ -809,6 +821,8 @@ class SSRTrainer(object):
         ret['depth_coarse'] = depth_coarse
         if self.enable_semantic:
             ret['sem_logits_coarse'] = sem_logits_coarse
+        if self.enable_instance:
+            ret['inst_logits_coarse'] = inst_logits_coarse
 
         if self.N_importance > 0:
             ret['rgb_fine'] = rgb_fine
@@ -817,6 +831,8 @@ class SSRTrainer(object):
             ret['depth_fine'] = depth_fine
             if self.enable_semantic:
                 ret['sem_logits_fine'] = sem_logits_fine
+            if self.enable_instance:
+                ret['inst_logits_fine'] = inst_logits_fine
             ret['z_std'] = torch.std(z_samples, dim=-1, unbiased=False)  # [N_rays]
             ret['raw_fine'] = raw_fine  # model's raw, unprocessed predictions.
             if self.endpoint_feat:
@@ -829,7 +845,7 @@ class SSRTrainer(object):
         return ret
 
 
-    def create_ssr(self):
+    def create_ssr(self, num_semantic_classes):
         """Instantiate NeRF's MLP model.
         """
 
@@ -845,18 +861,18 @@ class SSRTrainer(object):
                                                         scalar_factor=1)
         output_ch = 5 if self.N_importance > 0 else 4
         skips = [4]
-        model = nerf_model(enable_semantic = self.enable_semantic, enable_instance=self.enable_instance, num_semantic_classes=self.num_valid_semantic_class,
-                     D=self.config["model"]["netdepth"], W=self.config["model"]["netwidth"],
-                     input_ch=input_ch, output_ch=output_ch, skips=skips,
-                     input_ch_views=input_ch_views, use_viewdirs=self.config["render"]["use_viewdirs"]).cuda()
+        model = nerf_model(enable_semantic=self.enable_semantic, enable_instance=self.enable_instance, num_semantic_classes=num_semantic_classes,
+                           num_instance=self.num_instance, D=self.config["model"]["netdepth"], W=self.config["model"]["netwidth"],
+                           input_ch=input_ch, output_ch=output_ch, skips=skips,
+                           input_ch_views=input_ch_views, use_viewdirs=self.config["render"]["use_viewdirs"]).cuda()
         grad_vars = list(model.parameters())
 
         model_fine = None
         if self.N_importance > 0:
-            model_fine = nerf_model(enable_semantic = self.enable_semantic, enable_instance=self.enable_instance, num_semantic_classes=self.num_valid_semantic_class,
-                              D=self.config["model"]["netdepth_fine"], W=self.config["model"]["netwidth_fine"],
-                              input_ch=input_ch, output_ch=output_ch, skips=skips,
-                              input_ch_views=input_ch_views, use_viewdirs=self.config["render"]["use_viewdirs"]).cuda()
+            model_fine = nerf_model(enable_semantic=self.enable_semantic, enable_instance=self.enable_instance, num_semantic_classes=num_semantic_classes,
+                                    num_instance=self.num_instance, D=self.config["model"]["netdepth_fine"], W=self.config["model"]["netwidth_fine"],
+                                    input_ch=input_ch, output_ch=output_ch, skips=skips,
+                                    input_ch_views=input_ch_views, use_viewdirs=self.config["render"]["use_viewdirs"]).cuda()
             grad_vars += list(model_fine.parameters())
 
         # Create optimizer
@@ -909,7 +925,9 @@ class SSRTrainer(object):
 
         # sample rays to query and optimise
         sampled_data = self.sample_data(global_step, self.rays, self.H, self.W, no_batching=True, mode="train")
-        if self.enable_semantic:
+        if self.enable_instance:
+            sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sampled_gt_instance, sematic_available = sampled_data
+        elif self.enable_semantic:
             sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sematic_available = sampled_data
         else:
             sampled_rays, sampled_gt_rgb = sampled_data
@@ -921,18 +939,22 @@ class SSRTrainer(object):
         depth_coarse = output_dict["depth_coarse"] # N_rays
         acc_coarse = output_dict["acc_coarse"] # N_rays
         if self.enable_semantic:
-            sem_logits_coarse = output_dict["sem_logits_coarse"] # N_rays x num_classes
+            sem_logits_coarse = output_dict["sem_logits_coarse"]  # N_rays x num_classes
             sem_label_coarse = logits_2_label(sem_logits_coarse)  # N_rays
+        if self.enable_instance:
+            inst_logits_coarse = output_dict["inst_logits_coarse"]
 
         if self.N_importance > 0:
             rgb_fine = output_dict["rgb_fine"]
             disp_fine = output_dict["disp_fine"]
             depth_fine = output_dict["depth_fine"]
             acc_fine = output_dict["acc_fine"]
-            z_std = output_dict["z_std"] # N_rays
+            z_std = output_dict["z_std"]  # N_rays
             if self.enable_semantic:
                 sem_logits_fine = output_dict["sem_logits_fine"]
                 sem_label_fine = logits_2_label(sem_logits_fine)
+            if self.enable_instance:
+                inst_logits_fine = output_dict["inst_logits_fine"]
 
         self.optimizer.zero_grad()
 
@@ -944,6 +966,12 @@ class SSRTrainer(object):
             semantic_loss_coarse = torch.tensor(0)
 
 
+        if self.enable_instance:
+            sampled_gt_instance = remap_instance_label(self.num_instance, inst_logits_coarse, sampled_gt_instance)
+            instance_loss_coarse = CrossEntropyLoss(inst_logits_coarse, sampled_gt_instance)
+        else:
+            instance_loss_coarse = torch.tensor(0)
+
         with torch.no_grad():
             psnr_coarse = mse2psnr(img_loss_coarse)
 
@@ -953,6 +981,13 @@ class SSRTrainer(object):
                 semantic_loss_fine = crossentropy_loss(sem_logits_fine, sampled_gt_semantic)
             else:
                 semantic_loss_fine = torch.tensor(0)
+
+            if self.enable_instance:
+                sampled_gt_instance = remap_instance_label(self.num_instance, inst_logits_fine, sampled_gt_instance)
+                instance_loss_fine = CrossEntropyLoss(inst_logits_fine, sampled_gt_instance)
+            else:
+                instance_loss_fine = torch.tensor(0)
+
             with torch.no_grad():
                 psnr_fine = mse2psnr(img_loss_fine)
         else:
@@ -961,10 +996,11 @@ class SSRTrainer(object):
 
         total_img_loss = img_loss_coarse + img_loss_fine
         total_sem_loss = semantic_loss_coarse + semantic_loss_fine
-
+        total_inst_loss = instance_loss_coarse + instance_loss_fine
 
         wgt_sem_loss = float(self.config["train"]["wgt_sem"])
-        total_loss = total_img_loss + total_sem_loss*wgt_sem_loss
+        wgt_inst_loss = float(self.config["train"]["inst_sem"])
+        total_loss = total_img_loss + total_sem_loss*wgt_sem_loss + total_inst_loss*wgt_inst_loss
 
         total_loss.backward()
         self.optimizer.step()
@@ -983,9 +1019,11 @@ class SSRTrainer(object):
             self.tfb_viz.vis_scalars(global_step,
                                     [img_loss_coarse, img_loss_fine, total_img_loss,
                                     semantic_loss_coarse, semantic_loss_fine, total_sem_loss, total_sem_loss*wgt_sem_loss,
+                                    instance_loss_coarse, instance_loss_fine, total_inst_loss, total_inst_loss*wgt_inst_loss,
                                     total_loss],
                                     ['Train/Loss/img_loss_coarse', 'Train/Loss/img_loss_fine', 'Train/Loss/total_img_loss',
                                     'Train/Loss/semantic_loss_coarse', 'Train/Loss/semantic_loss_fine', 'Train/Loss/total_sem_loss', 'Train/Loss/weighted_total_sem_loss',
+                                    'Train/Loss/instance_loss_coarse', 'Train/Loss/instance_loss_fine', 'Train/Loss/total_inst_loss', 'Train/Loss/weighted_total_inst_loss',
                                     'Train/Loss/total_loss'])
 
             # add raw transparancy value into tfb histogram
@@ -1025,7 +1063,7 @@ class SSRTrainer(object):
             print(' {} train images'.format(self.num_train))
             with torch.no_grad():
                 # rgbs, disps, deps, vis_deps, sems, vis_sems
-                rgbs, disps, deps, vis_deps, sems, vis_sems, sem_uncers, vis_sem_uncers = self.render_path(self.rays_vis, save_dir=trainsavedir)
+                rgbs, disps, deps, vis_deps, sems, vis_sems, sem_uncers, vis_sem_uncers, insts, vis_insts, inst_uncers, vis_inst_uncers  = self.render_path(self.rays_vis, save_dir=trainsavedir)
                 #  numpy array of shape [B,H,W,C] or [B,H,W]
             print('Saved training set')
 
@@ -1105,9 +1143,8 @@ class SSRTrainer(object):
             os.makedirs(testsavedir, exist_ok=True)
             print(' {} test images'.format(self.num_test))
             with torch.no_grad():
-                rgbs, disps, deps, vis_deps, sems, vis_sems, sem_uncers, vis_sem_uncers = self.render_path(self.rays_test, save_dir=testsavedir)
+                rgbs, disps, deps, vis_deps, sems, vis_sems, sem_uncers, vis_sem_uncers, insts, vis_insts, inst_uncers, vis_inst_uncers  = self.render_path(self.rays_test, save_dir=testsavedir)
             print('Saved test set')
-
 
             self.training = True  # set training flag back after rendering images
             self.ssr_net_coarse.train()
@@ -1131,6 +1168,9 @@ class SSRTrainer(object):
             if self.enable_semantic:
                 imageio.mimwrite(os.path.join(testsavedir, 'sem.mp4'), vis_sems, fps=30, quality=8)
                 imageio.mimwrite(os.path.join(testsavedir, 'sem_uncertainty.mp4'), vis_sem_uncers, fps=30, quality=8)
+            if self.enable_instance:
+                imageio.mimwrite(os.path.join(testsavedir, 'inst.mp4'), vis_insts, fps=30, quality=8)
+                imageio.mimwrite(os.path.join(testsavedir, 'inst_uncertainty.mp4'), vis_inst_uncers, fps=30, quality=8)
 
             # add rendered image into tf-board
             self.tfb_viz.tb_writer.add_image('Test/rgb', rgbs, global_step, dataformats='NHWC')
@@ -1155,7 +1195,6 @@ class SSRTrainer(object):
                         [miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test],
                         ['Test/Metric/mIoU', 'Test/Metric/mIoU_validclass', 'Test/Metric/total_acc', 'Test/Metric/avg_acc'])
 
-
                 if dataset_type == "replica_nyu_cnn":
                     # we also evaluate the rendering against the trained CNN labels in addition to perfect GT labels
                     miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = \
@@ -1176,6 +1215,97 @@ class SSRTrainer(object):
                        f"semantic_loss: {semantic_loss_coarse.item()}, semantic_fine: {semantic_loss_fine.item()}, "
                        f"PSNR_coarse: {psnr_coarse.item()}, PSNR_fine: {psnr_fine.item()}")
 
+    def eval_step(self, global_step, semantic_class):
+        # Misc
+        img2mse = lambda x, y: torch.mean((x - y) ** 2)
+        mse2psnr = lambda x: -10. * torch.log(x) / torch.log(torch.Tensor([10.]).cuda())
+        # this function assume input is already in log-probabilities
+        dataset_type = self.config["experiment"]["dataset_type"]
+
+        to8b_np = lambda x: (255 * np.clip(x, 0, 1)).astype(np.uint8)
+
+        first_k = 1000
+
+        # render and save test images, corresponding videos
+        self.training = False  # enable testing mode before rendering results, need to set back during training!
+        self.ssr_net_coarse.eval()
+        self.ssr_net_fine.eval()
+        testsavedir = os.path.join(self.config["experiment"]["save_dir"], "test_render",
+                                   'step_{:06d}'.format(global_step))
+        os.makedirs(testsavedir, exist_ok=True)
+        print(' {} test images'.format(self.num_test))
+        with torch.no_grad():
+            rgbs, disps, deps, vis_deps, sems, vis_sems, sem_uncers, vis_sem_uncers, insts, vis_insts, inst_uncers, vis_inst_uncers  = self.render_path(self.rays_test[:first_k], save_dir=testsavedir)
+        print('Saved test set')
+
+        self.training = True  # set training flag back after rendering images
+        self.ssr_net_coarse.train()
+        self.ssr_net_fine.train()
+
+        with torch.no_grad():
+            if self.enable_semantic:
+                # mask out void regions for better visualisation
+                for idx in range(vis_sems.shape[0]):
+                    vis_sems[idx][self.test_semantic_scaled[idx] == self.ignore_label, :] = 0
+
+            batch_test_img_mse = img2mse(torch.from_numpy(rgbs), self.test_image_scaled.cpu()[:first_k])
+            batch_test_img_psnr = mse2psnr(batch_test_img_mse)
+
+            self.tfb_viz.vis_scalars(global_step, [batch_test_img_psnr, batch_test_img_mse],
+                                     ['Test/Metric/batch_PSNR', 'Test/Metric/batch_MSE'])
+
+        imageio.mimwrite(os.path.join(testsavedir, 'rgb.mp4'), to8b_np(rgbs), fps=30, quality=8)
+        imageio.mimwrite(os.path.join(testsavedir, 'dep.mp4'), vis_deps, fps=30, quality=8)
+        imageio.mimwrite(os.path.join(testsavedir, 'disps.mp4'), to8b_np(disps / np.max(disps)), fps=30, quality=8)
+        if self.enable_semantic:
+            imageio.mimwrite(os.path.join(testsavedir, 'sem.mp4'), vis_sems, fps=30, quality=8)
+            imageio.mimwrite(os.path.join(testsavedir, 'sem_uncertainty.mp4'), vis_sem_uncers, fps=30, quality=8)
+        if self.enable_instance:
+            imageio.mimwrite(os.path.join(testsavedir, 'inst.mp4'), vis_insts, fps=30, quality=8)
+            imageio.mimwrite(os.path.join(testsavedir, 'inst_uncertainty.mp4'), vis_inst_uncers, fps=30, quality=8)
+
+        # add rendered image into tf-board
+        self.tfb_viz.tb_writer.add_image('Test/rgb', rgbs, global_step, dataformats='NHWC')
+        self.tfb_viz.tb_writer.add_image('Test/depth', vis_deps, global_step, dataformats='NHWC')
+        self.tfb_viz.tb_writer.add_image('Test/disps', np.expand_dims(disps, -1), global_step, dataformats='NHWC')
+
+        # evaluate depths
+        depth_metrics_dic = calculate_depth_metrics(depth_trgt=self.test_depth_scaled[:first_k], depth_pred=deps)
+        self.tfb_viz.vis_scalars(global_step,
+                                 list(depth_metrics_dic.values()),
+                                 ["Test/Metric/" + k for k in list(depth_metrics_dic.keys())])
+
+
+        if self.enable_semantic:
+            self.tfb_viz.tb_writer.add_image('Test/vis_sem_label', vis_sems, global_step, dataformats='NHWC')
+            self.tfb_viz.tb_writer.add_image('Test/vis_sem_uncertainty', vis_sem_uncers, global_step,
+                                             dataformats='NHWC')
+
+            # add segmentation quantative metrics during testung into tfb
+
+            new_sems = deepcopy(sems)
+            for i, cls in enumerate(semantic_class):
+                new_sems[sems == i-1] = cls
+                # new_sems[sems == i] = cls
+            new2_sems = np.zeros(sems.shape)
+            for i, cls in enumerate(self.semantic_classes):
+                new2_sems[new_sems == cls.item()] = i
+            new2_sems -= 1
+
+            miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = \
+                calculate_segmentation_metrics(true_labels=self.test_semantic_scaled[:first_k], predicted_labels=new2_sems,
+                                               number_classes=self.num_valid_semantic_class,
+                                               ignore_label=self.ignore_label)
+
+            # number_classes=self.num_semantic_class-1 to exclude void class
+            self.tfb_viz.vis_scalars(global_step,
+                                     [miou_test, miou_test_validclass, total_accuracy_test,
+                                      class_average_accuracy_test],
+                                     ['Test/Metric/mIoU', 'Test/Metric/mIoU_validclass', 'Test/Metric/total_acc',
+                                      'Test/Metric/avg_acc'])
+
+            return miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test
+
 
     def render_path(self, rays, save_dir=None):
 
@@ -1188,8 +1318,14 @@ class SSRTrainer(object):
         sems = []
         vis_sems = []
 
+        insts = []
+        vis_insts = []
+
         entropys = []
         vis_entropys = []
+
+        inst_entropys = []
+        inst_vis_entropys = []
 
         to8b_np = lambda x: (255 * np.clip(x, 0, 1)).astype(np.uint8)
         to8b = lambda x: (255 * torch.clamp(x, 0, 1)).type(torch.uint8)
@@ -1206,7 +1342,7 @@ class SSRTrainer(object):
             depth_coarse = output_dict["depth_coarse"]
 
             rgb = rgb_coarse
-            depth =depth_coarse
+            depth = depth_coarse
             disp = disp_coarse
 
             if self.enable_semantic:
@@ -1217,6 +1353,15 @@ class SSRTrainer(object):
                 sem_label = sem_label_coarse
                 vis_sem = vis_sem_label_coarse
                 sem_uncertainty = sem_uncertainty_coarse
+
+
+            if self.enable_instance:
+                inst_label_coarse = logits_2_label(output_dict["inst_logits_coarse"])
+                inst_uncertainty_coarse = logits_2_uncertainty(output_dict["inst_logits_coarse"])
+                vis_sem_label_coarse = self.inst_colour_map[inst_label_coarse]
+                inst_label = inst_label_coarse
+                vis_inst = vis_sem_label_coarse
+                inst_uncertainty = inst_uncertainty_coarse
 
 
             if self.N_importance > 0:
@@ -1236,6 +1381,14 @@ class SSRTrainer(object):
                     sem_label = sem_label_fine
                     vis_sem = vis_sem_label_fine
                     sem_uncertainty = sem_uncertainty_fine
+
+                if self.enable_instance:
+                    inst_label_fine = logits_2_label(output_dict["inst_logits_fine"])
+                    inst_uncertainty_fine = logits_2_uncertainty(output_dict["inst_logits_fine"])
+                    vis_sem_label_fine = self.inst_colour_map[inst_label_fine]
+                    inst_label = inst_label_fine
+                    vis_inst = vis_sem_label_fine
+                    inst_uncertainty = inst_uncertainty_fine
 
             rgb = rgb.cpu().numpy().reshape((self.H_scaled, self.W_scaled, 3))
             depth = depth.cpu().numpy().reshape((self.H_scaled, self.W_scaled))
@@ -1259,6 +1412,19 @@ class SSRTrainer(object):
 
                 entropys.append(sem_uncertainty)
                 vis_entropys.append(vis_sem_uncertainty)
+
+            if self.enable_instance:
+                inst_label = inst_label.cpu().numpy().astype(np.uint8).reshape((self.H_scaled, self.W_scaled))
+                vis_inst = vis_inst.cpu().numpy().astype(np.uint8).reshape((self.H_scaled, self.W_scaled, 3))
+                inst_uncertainty = inst_uncertainty.cpu().numpy().reshape((self.H_scaled, self.W_scaled))
+                vis_inst_uncertainty = depth2rgb(inst_uncertainty)
+
+                insts.append(inst_label)
+                vis_insts.append(vis_inst)
+
+                inst_entropys.append(inst_uncertainty)
+                inst_vis_entropys.append(vis_inst_uncertainty)
+
 
             if i==0:
                 print(rgb.shape, disp.shape)
@@ -1293,18 +1459,32 @@ class SSRTrainer(object):
                     sem = sems[-1]
                     vis_sem = vis_sems[-1]
 
-
                     sem_uncer = to8b_np(entropys[-1])
                     vis_sem_uncer = vis_entropys[-1]
 
                     imageio.imwrite(label_filename, sem)
                     imageio.imwrite(vis_label_filename, vis_sem)
 
-                    imageio.imwrite(label_filename, sem)
-                    imageio.imwrite(vis_label_filename, vis_sem)
-
                     imageio.imwrite(entropy_filename, sem_uncer)
                     imageio.imwrite(vis_entropy_filename, vis_sem_uncer)
+
+                if self.enable_instance:
+                    inst_label_filename = os.path.join(save_dir, 'inst_label_{:03d}.png'.format(i))
+                    inst_vis_label_filename = os.path.join(save_dir, 'inst_vis_label_{:03d}.png'.format(i))
+
+                    inst_entropy_filename = os.path.join(save_dir, 'inst_entropy_{:03d}.png'.format(i))
+                    inst_vis_entropy_filename = os.path.join(save_dir, 'inst_vis_entropy_{:03d}.png'.format(i))
+                    inst = insts[-1]
+                    vis_inst = vis_insts[-1]
+
+                    inst_uncer = to8b_np(inst_entropys[-1])
+                    vis_inst_uncer = inst_vis_entropys[-1]
+
+                    imageio.imwrite(inst_label_filename, inst)
+                    imageio.imwrite(inst_vis_label_filename, vis_inst)
+
+                    imageio.imwrite(inst_entropy_filename, inst_uncer)
+                    imageio.imwrite(inst_vis_entropy_filename, vis_inst_uncer)
 
         rgbs = np.stack(rgbs, 0)
         disps = np.stack(disps, 0)
@@ -1321,4 +1501,17 @@ class SSRTrainer(object):
             vis_sems = None
             entropys = None
             vis_entropys = None
-        return rgbs, disps, deps, vis_deps, sems, vis_sems, entropys, vis_entropys
+
+        if self.enable_instance:
+            insts = np.stack(insts, 0)
+            vis_insts = np.stack(vis_insts, 0)
+            inst_entropys = np.stack(inst_entropys, 0)
+            inst_vis_entropys = np.stack(inst_vis_entropys, 0)
+        else:
+            insts = None
+            vis_insts = None
+            inst_entropys = None
+            inst_vis_entropys = None
+
+        return rgbs, disps, deps, vis_deps, sems, vis_sems, entropys, vis_entropys, insts, vis_insts, inst_entropys, inst_vis_entropys
+
