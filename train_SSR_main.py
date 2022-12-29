@@ -74,7 +74,7 @@ def train():
     if len(args.gpu)>0:
         config["experiment"]["gpu"] = args.gpu
     config['experiment']['save_dir'] = args.save_dir
-    config['enable_instance'] = False
+    config['enable_instance'] = True
 
     print("Experiment GPU is {}.".format(config["experiment"]["gpu"]))
     trainer.select_gpus(config["experiment"]["gpu"])

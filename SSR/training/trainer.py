@@ -149,6 +149,39 @@ class SSRTrainer(object):
         # logging
         self.save_dir = self.config["experiment"]["save_dir"]
 
+    def prepare_data_replica_test(self, data, gpu=True):
+        test_samples = data.test_samples
+
+        # preprocess semantic info
+        # self.semantic_classes = torch.from_numpy(data.semantic_classes)
+        # self.num_semantic_class = self.semantic_classes.shape[0]  # number of semantic classes, including void class=0
+        # self.num_valid_semantic_class = self.num_semantic_class - 1  # exclude void class
+        # assert self.num_semantic_class==data.num_semantic_class
+
+        #####test data#####
+        # semantic
+        self.test_semantic = torch.from_numpy(test_samples["semantic_remap"])  # [num_test, H, W]
+
+        # we only add noise to training images, therefore test images are kept intact. No need for test_remap_clean
+        # process the clean label for evaluation purpose
+        self.test_semantic_scaled = F.interpolate(torch.unsqueeze(self.test_semantic, dim=1).float(),
+                                                    scale_factor=1/self.config["render"]["test_viz_factor"],
+                                                    mode='nearest').squeeze(1)
+        self.test_semantic_scaled = self.test_semantic_scaled.cpu().numpy() - 1 # shift void class from value 0 to -1, to match self.ignore_label
+
+        # pose
+        self.test_Ts = torch.from_numpy(test_samples["T_wc"]).float()  # [num_test, 4, 4]
+
+        # instance
+        self.test_instance = torch.from_numpy(test_samples["instance"])
+
+        if gpu is True:
+            self.test_image = self.test_image.cuda()
+            self.test_image_scaled = self.test_image_scaled.cuda()
+            self.test_depth = self.test_depth.cuda()
+            self.test_semantic = self.test_semantic.cuda()
+
+
     def prepare_data_replica(self, data, gpu=True):
         self.ignore_label = -1
 
@@ -1215,7 +1248,7 @@ class SSRTrainer(object):
                        f"semantic_loss: {semantic_loss_coarse.item()}, semantic_fine: {semantic_loss_fine.item()}, "
                        f"PSNR_coarse: {psnr_coarse.item()}, PSNR_fine: {psnr_fine.item()}")
 
-    def eval_step(self, global_step, semantic_class):
+    def eval_step(self, global_step, coco_semantic_classes, replica_semantic_classes):
         # Misc
         img2mse = lambda x, y: torch.mean((x - y) ** 2)
         mse2psnr = lambda x: -10. * torch.log(x) / torch.log(torch.Tensor([10.]).cuda())
@@ -1224,7 +1257,7 @@ class SSRTrainer(object):
 
         to8b_np = lambda x: (255 * np.clip(x, 0, 1)).astype(np.uint8)
 
-        first_k = 2
+        first_k = 1000
 
         # render and save test images, corresponding videos
         self.training = False  # enable testing mode before rendering results, need to set back during training!
@@ -1284,17 +1317,17 @@ class SSRTrainer(object):
             # add segmentation quantative metrics during testung into tfb
 
             new_sems = deepcopy(sems)
-            for i, cls in enumerate(semantic_class):
+            for i, cls in enumerate(coco_semantic_classes):
                 new_sems[sems == i-1] = cls
                 # new_sems[sems == i] = cls
             new2_sems = np.zeros(sems.shape)
-            for i, cls in enumerate(self.semantic_classes):
+            for i, cls in enumerate(replica_semantic_classes):
                 new2_sems[new_sems == cls.item()] = i
             new2_sems -= 1
 
             miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = \
                 calculate_segmentation_metrics(true_labels=self.test_semantic_scaled[:first_k], predicted_labels=new2_sems,
-                                               number_classes=self.num_valid_semantic_class,
+                                               number_classes=len(replica_semantic_classes)-1,
                                                ignore_label=self.ignore_label)
 
             # number_classes=self.num_semantic_class-1 to exclude void class

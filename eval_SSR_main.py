@@ -93,14 +93,6 @@ def train():
     config["experiment"]["train_ids"] = train_ids
     config["experiment"]["test_ids"] = test_ids
 
-    replica_coco_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=config["experiment"]["dataset_dir"],
-                                                                    train_ids=train_ids, test_ids=test_ids,
-                                                                    label_folder=args.label_folder,
-                                                                    remap=COCO_STUFF_MAP,
-                                                                    enable_instance=config["enable_instance"],
-                                                                    img_h=config["experiment"]["height"],
-                                                                    img_w=config["experiment"]["width"])
-
     replica_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=config["experiment"]["dataset_dir"],
                                                                train_ids=train_ids, test_ids=test_ids,
                                                                label_folder='semantic_class',
@@ -109,9 +101,19 @@ def train():
                                                                img_h=config["experiment"]["height"],
                                                                img_w=config["experiment"]["width"])
 
+    replica_coco_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=config["experiment"]["dataset_dir"],
+                                                                    train_ids=train_ids, test_ids=test_ids,
+                                                                    enable_instance=config["enable_instance"],
+                                                                    label_folder=args.label_folder,
+                                                                    remap=COCO_STUFF_MAP,
+                                                                    img_h=config["experiment"]["height"],
+                                                                    img_w=config["experiment"]["width"])
+
+
     print("Standard setup with full dense supervision.")
     ssr_trainer.set_params_replica()
-    ssr_trainer.prepare_data_replica(replica_data_loader)
+    ssr_trainer.prepare_data_replica(replica_coco_data_loader)
+    ssr_trainer.prepare_data_replica_test(replica_data_loader)
 
     # Create nerf model, init optimizer
     ssr_trainer.create_ssr(replica_coco_data_loader.num_semantic_class - 1)
@@ -124,7 +126,7 @@ def train():
     print('Begin')
 
     time0 = time.time()
-    miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = ssr_trainer.eval_step(0, replica_coco_data_loader.semantic_classes)
+    miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = ssr_trainer.eval_step(0, replica_coco_data_loader.semantic_classes, replica_data_loader.semantic_classes)
 
     dt = time.time()-time0
     print()
