@@ -148,6 +148,25 @@ COCO_STUFF_MAP = {
     98: 20,
     99: 20,
     100: 20,
+    101: 20,
+    102: 20,
+    103: 20,
+    105: 20,
+    106: 20,
+    107: 20,
+    108: 20,
+    113: 20,
+    116: 20,
+    117: 20,
+    119: 20,
+    123: 20,
+    124: 20,
+    125: 20,
+    126: 20,
+    127: 20,
+    128: 20,
+    129: 20,
+    130: 20,
 }
 
 REPLICA_ROOM_0_CLASSES = ['backpack', 'base-cabinet', 'basket', 'bathtub', 'beam', 'beanbag', 'bed',
@@ -270,19 +289,19 @@ REPLICA_MAP = {
     100: 20,
 }
 
-for i, cls in enumerate(COCO_STUFF_CLASSES):
+# for i, cls in enumerate(COCO_STUFF_CLASSES):
 #     # if 'rug' in cls:
 #     #     print(i, cls)
-    if i not in COCO_STUFF_MAP.keys():
-        print(f"    {i}: 20,")
+#     if i not in COCO_STUFF_MAP.keys():
+#         print(f"    {i}: 20,")
 
-print()
+# print()
 
-for i, cls in enumerate(REPLICA_ROOM_0_CLASSES):
+# for i, cls in enumerate(REPLICA_ROOM_0_CLASSES):
     # if 'rug' in cls:
     #     print(i, cls)
-    if i not in REPLICA_MAP.keys():
-        print(f"{i}: 20,")
+    # if i not in REPLICA_MAP.keys():
+    #     print(f"{i}: 20,")
 
 
 # print()
