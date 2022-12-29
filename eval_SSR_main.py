@@ -17,6 +17,7 @@ def train():
     parser = argparse.ArgumentParser()
     parser.add_argument('--resume', type=str)
     parser.add_argument('--label_folder', type=str)
+    parser.add_argument('--save_dir', type=str, default="debug")
     parser.add_argument('--config_file', type=str, default="SSR/configs/SSR_room0_config.yaml",
                     help='config file name.')
     parser.add_argument('--dataset_type', type=str, default="replica", choices= ["replica", "replica_nyu_cnn", "scannet"],
@@ -70,12 +71,14 @@ def train():
     # Read YAML file
     with open(args.config_file, 'r') as f:
         config = yaml.safe_load(f)
+    config['experiment']['save_dir'] = args.save_dir
+    config['enable_instance'] = False
+
     if len(args.gpu)>0:
         config["experiment"]["gpu"] = args.gpu
     print("Experiment GPU is {}.".format(config["experiment"]["gpu"]))
     trainer.select_gpus(config["experiment"]["gpu"])
     config["experiment"].update(vars(args))
-    config['enable_instance'] = False
     # Cast intrinsics to right types
 
 

@@ -1224,7 +1224,7 @@ class SSRTrainer(object):
 
         to8b_np = lambda x: (255 * np.clip(x, 0, 1)).astype(np.uint8)
 
-        first_k = 1000
+        first_k = 2
 
         # render and save test images, corresponding videos
         self.training = False  # enable testing mode before rendering results, need to set back during training!
@@ -1366,7 +1366,7 @@ class SSRTrainer(object):
 
             if self.N_importance > 0:
                 rgb_fine = output_dict["rgb_fine"]
-                depth_fine= output_dict["depth_fine"]
+                depth_fine = output_dict["depth_fine"]
                 disp_fine = output_dict["disp_fine"]
 
                 rgb = rgb_fine

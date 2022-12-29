@@ -122,7 +122,7 @@ def train():
 
     for s in sems_unique:
         if s not in test_sems_unique:
-            sems[sems_copy == s] = 0
+            sems[sems_copy == s] = 21
 
     for i, s in enumerate(test_sems_unique):
         sems[sems_copy == s] = i
