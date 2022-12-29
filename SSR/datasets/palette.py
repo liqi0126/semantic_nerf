@@ -198,6 +198,7 @@ REPLICA_MAP = {
     79: 6,  # table -> table
     36: 7,  # door -> door
     96: 8,  # window -> window
+    11: 8,  # blinds -> window
     32: 9,  # countertop -> counter
     70: 10,  # shelf -> shelves
     29: 11,  # curtain -> curtain
@@ -290,9 +291,16 @@ REPLICA_MAP = {
     100: 20,
 }
 
+for i, cls in enumerate(COCO_STUFF_CLASSES):
+    if 'chair' in cls:
+        print(i, cls)
+    # if i not in REPLICA_MAP.keys():
+    #     print(f"{i}: 20,")
+
+
 
 for i, cls in enumerate(REPLICA_ROOM_0_CLASSES):
-    if 'rug' in cls:
+    if 'chair' in cls:
         print(i, cls)
     # if i not in REPLICA_MAP.keys():
     #     print(f"{i}: 20,")
