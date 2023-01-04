@@ -17,7 +17,7 @@ def semantic_remap(semantic, remap):
 
 
 class ReplicaDatasetCache(Dataset):
-    def __init__(self, data_dir, train_ids, test_ids, label_folder, remap, img_h=None, img_w=None, enable_instance=True):
+    def __init__(self, data_dir, train_ids, test_ids, label_folder, remap, enable_confidence=False, img_h=None, img_w=None, enable_instance=True):
         traj_file = os.path.join(data_dir, "traj_w_c.txt")
         self.rgb_dir = os.path.join(data_dir, "rgb")
         self.depth_dir = os.path.join(data_dir, "depth")  # depth is in mm uint
@@ -41,14 +41,16 @@ class ReplicaDatasetCache(Dataset):
         self.semantic_list = sorted(glob.glob(self.semantic_class_dir + '/semantic_class_*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
         if self.semantic_instance_dir is not None and enable_instance:
             self.instance_list = sorted(glob.glob(self.semantic_instance_dir + '/semantic_instance_*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
+        if enable_confidence:
+            self.confidence_list = sorted(glob.glob(self.semantic_class_dir + '/confidence_*.npz'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
 
         self.train_samples = {'image': [], 'depth': [],
-                          'semantic': [], 'T_wc': [],
-                          'instance': []}
+                              'semantic': [], 'T_wc': [],
+                              'instance': [], 'confidence': []}
 
         self.test_samples = {'image': [], 'depth': [],
-                          'semantic': [], 'T_wc': [],
-                          'instance': []}
+                             'semantic': [], 'T_wc': [],
+                             'instance': [], 'confidence': []}
 
        # training samples
         for idx in train_ids:
@@ -59,11 +61,16 @@ class ReplicaDatasetCache(Dataset):
             if self.semantic_instance_dir is not None and enable_instance:
                 instance = cv2.imread(self.instance_list[idx], cv2.IMREAD_UNCHANGED) # uint16
 
+            if enable_confidence:
+                confidence = np.load(self.confidence_list[idx])['confidence']
+
             if (self.img_h is not None and self.img_h != image.shape[0]) or \
                     (self.img_w is not None and self.img_w != image.shape[1]):
                 image = cv2.resize(image, (self.img_w, self.img_h), interpolation=cv2.INTER_LINEAR)
                 depth = cv2.resize(depth, (self.img_w, self.img_h), interpolation=cv2.INTER_LINEAR)
                 semantic = cv2.resize(semantic, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
+                if enable_confidence:
+                    confidence = cv2.resize(confidence, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
                 if self.semantic_instance_dir is not None and enable_instance:
                     instance = cv2.resize(instance, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
 
@@ -72,6 +79,8 @@ class ReplicaDatasetCache(Dataset):
             self.train_samples["image"].append(image)
             self.train_samples["depth"].append(depth)
             self.train_samples["semantic"].append(semantic)
+            if enable_confidence:
+                self.train_samples["confidence"].append(confidence)
             if self.semantic_instance_dir is not None and enable_instance:
                 self.train_samples["instance"].append(instance)
             self.train_samples["T_wc"].append(T_wc)
@@ -85,6 +94,8 @@ class ReplicaDatasetCache(Dataset):
             semantic = semantic_remap(semantic, remap)
             if self.semantic_instance_dir is not None and enable_instance:
                 instance = cv2.imread(self.instance_list[idx], cv2.IMREAD_UNCHANGED) # uint16
+            if enable_confidence:
+                confidence = np.load(self.confidence_list[idx])['confidence']
 
             if (self.img_h is not None and self.img_h != image.shape[0]) or \
                     (self.img_w is not None and self.img_w != image.shape[1]):
@@ -93,11 +104,15 @@ class ReplicaDatasetCache(Dataset):
                 semantic = cv2.resize(semantic, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
                 if self.semantic_instance_dir is not None and enable_instance:
                     instance = cv2.resize(instance, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
+                if enable_confidence:
+                    confidence = cv2.resize(confidence, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
             T_wc = self.Ts_full[idx]
 
             self.test_samples["image"].append(image)
             self.test_samples["depth"].append(depth)
             self.test_samples["semantic"].append(semantic)
+            if enable_confidence:
+                self.test_samples["confidence"].append(confidence)
             if self.semantic_instance_dir is not None and enable_instance:
                 self.test_samples["instance"].append(instance)
             self.test_samples["T_wc"].append(T_wc)

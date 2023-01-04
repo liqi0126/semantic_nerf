@@ -22,13 +22,15 @@ def batchify_rays(render_fn, rays_flat, chunk=1024 * 32):
 def remap_instance_label(num_instance, inst_logits, sampled_gt_instance):
     with torch.no_grad():
         prob = torch.softmax(inst_logits, -1).detach().cpu().numpy()
-        prob_matrix = np.zeros((num_instance, num_instance))
         sampled_gt_instance_cpu = sampled_gt_instance.cpu().numpy()
-        for value in np.unique(sampled_gt_instance_cpu):
-            if value == 0:
-                continue
 
-            prob_matrix[value] = prob[sampled_gt_instance_cpu == value].mean(0)
+    prob_matrix = np.zeros((num_instance, num_instance))
+    for value in np.unique(sampled_gt_instance_cpu):
+        if value == 0:
+            continue
+        prob_matrix[value] = prob[sampled_gt_instance_cpu == value].mean(0)
+
+    prob_matrix[:, 0] = 0
 
     _, nerf_instance_indices = scipy.optimize.linear_sum_assignment(-prob_matrix)
 
@@ -38,7 +40,7 @@ def remap_instance_label(num_instance, inst_logits, sampled_gt_instance):
             continue
         sampled_gt_instance_cpu[copied_sampled_gt_instance == val] = nerf_instance_indices[val]
     sampled_gt_instance = torch.tensor(sampled_gt_instance_cpu).long().cuda()
-    sampled_gt_instance[sampled_gt_instance == 0] = -1
+    # sampled_gt_instance[sampled_gt_instance == 0] = -1
     return sampled_gt_instance
 
 

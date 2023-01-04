@@ -1,14 +1,13 @@
-
 experiment:
-  scene_file: "/data/Replica_Dataset/semantic_info/room_0/" # room_0,room_01, etc.
+  scene_file: "/data/Replica_Dataset/semantic_info/office_3/" # room_0,room_01, etc.
   save_dir: "debug"  # where to store ckpts and rendering
-  dataset_dir: "/data/Replica_Dataset/room_0/Sequence_1/"
+  dataset_dir: "/data/Replica_Dataset/office_3/Sequence_1/"
   convention: "opencv"
   width: 320
   height: 240
   gpu: "0"
   
-  enable_semantic: True
+  enable_semantic: False
   enable_depth: True
   endpoint_feat: False
 
@@ -19,7 +18,6 @@ model:
   netwidth_fine: 256
   chunk: 1024*128  # number of rays processed in parallel, decrease if running out of memory
   netchunk: 1024*128  # number of pts sent through network in parallel, decrease if running out of memory
-  resume: 'results/room0_rgb/checkpoints/200000.ckpt'
 
 render:
     N_rays: 32*32*1  # average number of rays sampled from each sample within a batch
@@ -39,16 +37,15 @@ render:
 train:
     lrate: 5e-4
     lrate_decay: 250e3
-    N_iters: 20000
-    wgt_sem: 4e-2
-    wgt_inst: 4e-2
-    # wgt_sem: 1
-    # wgt_inst: 1
+    N_iters: 200000
+    wgt_sem: 0
+    wgt_inst: 0
+
 
 
 logging: # logging/saving options
     step_log_print: 1  # 'frequency of console print'
     step_log_tfb: 500
-    step_save_ckpt: 20000
-    step_val: 1 # frequency of rendering on unseen data
-    step_vis_train: 20000
+    step_save_ckpt: 200000
+    step_val: 200000 # frequency of rendering on unseen data
+    step_vis_train: 200000

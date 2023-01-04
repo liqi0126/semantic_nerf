@@ -1,8 +1,8 @@
 
 experiment:
-  scene_file: "/data/Replica_Dataset/semantic_info/room_0/" # room_0,room_01, etc.
+  scene_file: "/data/Replica_Dataset/semantic_info/office_1/" # room_0,room_01, etc.
   save_dir: "debug"  # where to store ckpts and rendering
-  dataset_dir: "/data/Replica_Dataset/room_0/Sequence_1/"
+  dataset_dir: "/data/Replica_Dataset/office_1/Sequence_1/"
   convention: "opencv"
   width: 320
   height: 240
@@ -19,7 +19,7 @@ model:
   netwidth_fine: 256
   chunk: 1024*128  # number of rays processed in parallel, decrease if running out of memory
   netchunk: 1024*128  # number of pts sent through network in parallel, decrease if running out of memory
-  resume: 'results/room0_rgb/checkpoints/200000.ckpt'
+  resume: 'results/office1_rgb/checkpoints/200000.ckpt'
 
 render:
     N_rays: 32*32*1  # average number of rays sampled from each sample within a batch
@@ -50,5 +50,5 @@ logging: # logging/saving options
     step_log_print: 1  # 'frequency of console print'
     step_log_tfb: 500
     step_save_ckpt: 20000
-    step_val: 1 # frequency of rendering on unseen data
+    step_val: 20000 # frequency of rendering on unseen data
     step_vis_train: 20000

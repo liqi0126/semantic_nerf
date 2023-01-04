@@ -82,6 +82,7 @@ def train():
     trainer.select_gpus(config["experiment"]["gpu"])
     config["experiment"].update(vars(args))
     config['enable_instance'] = False
+    config['enable_confidence'] = False
 
     total_num = 900
     step = 5

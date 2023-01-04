@@ -16,7 +16,7 @@ import time
 def train():
     parser = argparse.ArgumentParser()
     parser.add_argument('--resume', type=str)
-    parser.add_argument('--label_folder', type=str)
+    parser.add_argument('--label_folder', type=str, default="mask2former")
     parser.add_argument('--save_dir', type=str, default="debug")
     parser.add_argument('--config_file', type=str, default="SSR/configs/SSR_room0_config.yaml",
                     help='config file name.')
@@ -73,6 +73,7 @@ def train():
         config = yaml.safe_load(f)
     config['experiment']['save_dir'] = args.save_dir
     config['enable_instance'] = False
+    config['enable_confidence'] = False
 
     if len(args.gpu)>0:
         config["experiment"]["gpu"] = args.gpu
@@ -80,7 +81,6 @@ def train():
     trainer.select_gpus(config["experiment"]["gpu"])
     config["experiment"].update(vars(args))
     # Cast intrinsics to right types
-
 
     ssr_trainer = trainer.SSRTrainer(config)
 
@@ -96,7 +96,7 @@ def train():
     replica_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=config["experiment"]["dataset_dir"],
                                                                train_ids=train_ids, test_ids=test_ids,
                                                                label_folder='semantic_class',
-                                                               enable_instance=config["enable_instance"],
+                                                               enable_instance=False,
                                                                remap=REPLICA_MAP,
                                                                img_h=config["experiment"]["height"],
                                                                img_w=config["experiment"]["width"])
@@ -117,8 +117,10 @@ def train():
 
     # Create nerf model, init optimizer
     ssr_trainer.create_ssr(replica_coco_data_loader.num_semantic_class - 1)
-    ssr_trainer.ssr_net_coarse.load_state_dict(torch.load(args.resume)['network_coarse_state_dict'])
-    ssr_trainer.ssr_net_fine.load_state_dict(torch.load(args.resume)['network_fine_state_dict'])
+    # ssr_trainer.ssr_net_coarse.load_state_dict(torch.load(args.resume)['network_coarse_state_dict'])
+    # ssr_trainer.ssr_net_fine.load_state_dict(torch.load(args.resume)['network_fine_state_dict'])
+    ssr_trainer.ssr_net_coarse.load_state_dict(torch.load(args.resume)['network_coarse_state_dict'], strict=False)
+    ssr_trainer.ssr_net_fine.load_state_dict(torch.load(args.resume)['network_fine_state_dict'], strict=False)
 
     # Create rays in world coordinates
     ssr_trainer.init_rays()

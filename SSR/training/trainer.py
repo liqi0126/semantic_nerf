@@ -117,6 +117,7 @@ class SSRTrainer(object):
     def set_params(self):
         self.enable_semantic = self.config["experiment"]["enable_semantic"]
         self.enable_instance = self.config["enable_instance"]
+        self.enable_confidence = self.config["enable_confidence"]
         self.num_instance = 50
 
         #render options
@@ -244,6 +245,9 @@ class SSRTrainer(object):
         self.train_semantic_clean = torch.from_numpy(train_samples["semantic_remap_clean"])
         self.viz_train_semantic_clean = np.stack([colour_map_np[sem] for sem in self.train_semantic_clean], axis=0) # [num_test, H, W, 3]
 
+        if self.enable_confidence:
+            self.train_confidence = torch.from_numpy(train_samples["confidence"])
+
         # process the clean label for evaluation purpose
         self.train_semantic_clean_scaled = F.interpolate(torch.unsqueeze(self.train_semantic_clean, dim=1).float(),
                                                             scale_factor=1/self.config["render"]["test_viz_factor"],
@@ -276,6 +280,9 @@ class SSRTrainer(object):
 
         self.viz_test_semantic = np.stack([colour_map_np[sem] for sem in self.test_semantic], axis=0) # [num_test, H, W, 3]
 
+        if self.enable_confidence:
+            self.test_confidence = torch.from_numpy(test_samples["confidence"])
+
         # we only add noise to training images, therefore test images are kept intact. No need for test_remap_clean
         # process the clean label for evaluation purpose
         self.test_semantic_scaled = F.interpolate(torch.unsqueeze(self.test_semantic, dim=1).float(),
@@ -293,10 +300,14 @@ class SSRTrainer(object):
             self.train_image_scaled = self.train_image_scaled.cuda()
             self.train_depth = self.train_depth.cuda()
             self.train_semantic = self.train_semantic.cuda()
+            if self.enable_confidence:
+                self.train_confidence = self.train_confidence.cuda()
 
             self.test_image = self.test_image.cuda()
             self.test_image_scaled = self.test_image_scaled.cuda()
             self.test_depth = self.test_depth.cuda()
+            if self.enable_confidence:
+                self.test_confidence = self.test_confidence.cuda()
             self.test_semantic = self.test_semantic.cuda()
             self.colour_map = self.colour_map.cuda()
             self.valid_colour_map = self.valid_colour_map.cuda()
@@ -676,6 +687,8 @@ class SSRTrainer(object):
             if self.enable_semantic:
                 depth = self.train_depth
                 semantic = self.train_semantic
+            if self.enable_confidence:
+                confidence = self.train_confidence
             if self.enable_instance:
                 instance = self.train_instance
             sample_num = self.num_train
@@ -684,6 +697,8 @@ class SSRTrainer(object):
             if self.enable_semantic:
                 depth = self.test_depth
                 semantic = self.test_semantic
+            if self.enable_confidence:
+                confidence = self.test_confidence
             if self.enable_instance:
                 instance = self.test_instance
             sample_num = self.num_test
@@ -704,11 +719,11 @@ class SSRTrainer(object):
             if self.enable_semantic:
                 gt_depth = depth.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
                 sematic_available_flag = self.mask_ids[index_batch] # semantic available if mask_id is 1 (train with rgb loss and semantic loss) else 0 (train with rgb loss only)
-                gt_semantic = semantic.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
-                gt_semantic = gt_semantic.cuda()
+                gt_semantic = semantic.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1).cuda()
+            if self.enable_confidence:
+                gt_confidence = confidence.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1).cuda()
             if self.enable_instance:
-                gt_instance = instance.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
-                gt_instance = gt_instance.cuda()
+                gt_instance = instance.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1).cuda()
         else:  # sample from all random pixels
 
             index_hw = self.rand_idx[self.i_batch:self.i_batch+self.n_rays]
@@ -718,11 +733,11 @@ class SSRTrainer(object):
             gt_image = image.reshape(-1, 3)[index_hw, :]
             if self.enable_semantic:
                 gt_depth = depth.reshape(-1)[index_hw]
-                gt_semantic = semantic.reshape(-1)[index_hw]
-                gt_semantic = gt_semantic.cuda()
+                gt_semantic = semantic.reshape(-1)[index_hw].cuda()
+            if self.enable_confidence:
+                gt_confidence = confidence.reshape(-1)[index_hw].cuda()
             if self.enable_instance:
-                gt_instance = instance.reshape(-1)[index_hw]
-                gt_instance = gt_instance.cuda()
+                gt_instance = instance.reshape(-1)[index_hw].cuda()
 
             self.i_batch += self.n_rays
             if self.i_batch >= total_ray_num:
@@ -732,6 +747,10 @@ class SSRTrainer(object):
 
         sampled_rays = flat_sampled_rays
         sampled_gt_rgb = gt_image
+        if self.enable_confidence:
+            sampled_confidence = gt_confidence
+        else:
+            sampled_confidence = None
         if self.enable_semantic:
             sampled_gt_depth = gt_depth
             sampled_gt_semantic = gt_semantic.long()  # required long type for nn.NLL or nn.crossentropy
@@ -739,9 +758,9 @@ class SSRTrainer(object):
             sampled_gt_instance = gt_instance.long()  # required long type for nn.NLL or nn.crossentropy
 
         if self.enable_instance:
-            return sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sampled_gt_instance, sematic_available_flag
+            return sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sampled_confidence, sampled_gt_instance, sematic_available_flag
         elif self.enable_semantic:
-            return sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sematic_available_flag
+            return sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sampled_confidence, sematic_available_flag
         else:
             return sampled_rays, sampled_gt_rgb
 
@@ -911,19 +930,18 @@ class SSRTrainer(object):
         # Create optimizer
         optimizer = torch.optim.Adam(params=grad_vars, lr=self.lrate)
 
-        ckpt = torch.load('results/rgb_only/checkpoints/200000.ckpt')
-        model.load_state_dict(ckpt['network_coarse_state_dict'], strict=False)
-        model_fine.load_state_dict(ckpt['network_fine_state_dict'], strict=False)
+        if self.config['model'].get('resume') is not None:
+            ckpt = torch.load(self.config['model']['resume'])
+            model.load_state_dict(ckpt['network_coarse_state_dict'], strict=False)
+            model_fine.load_state_dict(ckpt['network_fine_state_dict'], strict=False)
 
+            for n, p in model.named_parameters():
+                if 'semantic' not in n and 'instance' not in n:
+                    p.requires_grad = False
 
-        for n, p in model.named_parameters():
-            if 'semantic' not in n and 'instance' not in n:
-                p.requires_grad = False
-
-
-        for n, p in model_fine.named_parameters():
-            if 'semantic' not in n and 'instance' not in n:
-                p.requires_grad = False
+            for n, p in model_fine.named_parameters():
+                if 'semantic' not in n and 'instance' not in n:
+                    p.requires_grad = False
 
         self.ssr_net_coarse = model
         self.ssr_net_fine = model_fine
@@ -939,7 +957,7 @@ class SSRTrainer(object):
         # Misc
         img2mse = lambda x, y: torch.mean((x - y) ** 2)
         mse2psnr = lambda x: -10. * torch.log(x) / torch.log(torch.Tensor([10.]).cuda())
-        CrossEntropyLoss = nn.CrossEntropyLoss(ignore_index=self.ignore_label)
+        CrossEntropyLoss = nn.CrossEntropyLoss(reduction='none', ignore_index=self.ignore_label)
         KLDLoss = nn.KLDivLoss(reduction="none")
         kl_loss = lambda input_log_prob,target_prob: KLDLoss(input_log_prob, target_prob)
         # this function assume input is already in log-probabilities
@@ -959,9 +977,9 @@ class SSRTrainer(object):
         # sample rays to query and optimise
         sampled_data = self.sample_data(global_step, self.rays, self.H, self.W, no_batching=True, mode="train")
         if self.enable_instance:
-            sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sampled_gt_instance, sematic_available = sampled_data
+            sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sampled_confidence, sampled_gt_instance, sematic_available = sampled_data
         elif self.enable_semantic:
-            sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sematic_available = sampled_data
+            sampled_rays, sampled_gt_rgb, sampled_gt_depth, sampled_gt_semantic, sampled_confidence, sematic_available = sampled_data
         else:
             sampled_rays, sampled_gt_rgb = sampled_data
 
@@ -994,14 +1012,19 @@ class SSRTrainer(object):
         img_loss_coarse = img2mse(rgb_coarse, sampled_gt_rgb)
 
         if self.enable_semantic and sematic_available:
-            semantic_loss_coarse = crossentropy_loss(sem_logits_coarse, sampled_gt_semantic)
+            if self.enable_confidence:
+                semantic_loss_coarse = (sampled_confidence * crossentropy_loss(sem_logits_coarse, sampled_gt_semantic)).mean()
+            else:
+                semantic_loss_coarse = crossentropy_loss(sem_logits_coarse, sampled_gt_semantic).mean()
         else:
             semantic_loss_coarse = torch.tensor(0)
 
-
         if self.enable_instance:
             sampled_gt_instance = remap_instance_label(self.num_instance, inst_logits_coarse, sampled_gt_instance)
-            instance_loss_coarse = CrossEntropyLoss(inst_logits_coarse, sampled_gt_instance)
+            if self.enable_confidence:
+                instance_loss_coarse = (sampled_confidence * CrossEntropyLoss(inst_logits_coarse, sampled_gt_instance)).mean()
+            else:
+                instance_loss_coarse = CrossEntropyLoss(inst_logits_coarse, sampled_gt_instance).mean()
         else:
             instance_loss_coarse = torch.tensor(0)
 
@@ -1011,13 +1034,19 @@ class SSRTrainer(object):
         if self.N_importance > 0:
             img_loss_fine = img2mse(rgb_fine, sampled_gt_rgb)
             if self.enable_semantic and sematic_available:
-                semantic_loss_fine = crossentropy_loss(sem_logits_fine, sampled_gt_semantic)
+                if self.enable_confidence:
+                    semantic_loss_fine = (sampled_confidence * crossentropy_loss(sem_logits_fine, sampled_gt_semantic)).mean()
+                else:
+                    semantic_loss_fine = crossentropy_loss(sem_logits_fine, sampled_gt_semantic).mean()
             else:
                 semantic_loss_fine = torch.tensor(0)
 
             if self.enable_instance:
                 sampled_gt_instance = remap_instance_label(self.num_instance, inst_logits_fine, sampled_gt_instance)
-                instance_loss_fine = CrossEntropyLoss(inst_logits_fine, sampled_gt_instance)
+                if self.enable_confidence:
+                    instance_loss_fine = (sampled_confidence * CrossEntropyLoss(inst_logits_fine, sampled_gt_instance)).mean()
+                else:
+                    instance_loss_fine = CrossEntropyLoss(inst_logits_fine, sampled_gt_instance).mean()
             else:
                 instance_loss_fine = torch.tensor(0)
 
@@ -1032,7 +1061,7 @@ class SSRTrainer(object):
         total_inst_loss = instance_loss_coarse + instance_loss_fine
 
         wgt_sem_loss = float(self.config["train"]["wgt_sem"])
-        wgt_inst_loss = float(self.config["train"]["inst_sem"])
+        wgt_inst_loss = float(self.config["train"]["wgt_inst"])
         total_loss = total_img_loss + total_sem_loss*wgt_sem_loss + total_inst_loss*wgt_inst_loss
 
         total_loss.backward()

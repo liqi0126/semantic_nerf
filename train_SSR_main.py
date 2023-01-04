@@ -17,7 +17,7 @@ def train():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--config_file', type=str, default="/home/shuaifeng/Documents/PhD_Research/CodeRelease/SemanticSceneRepresentations/SSR/configs/SSR_room2_config_release.yaml",
     #                     help='config file name.')
-    parser.add_argument('--label_folder', type=str, default="ade20k_conf_0_6")
+    parser.add_argument('--label_folder', type=str, default="mask2former_conf_03")
     parser.add_argument('--save_dir', type=str, default="debug")
     parser.add_argument('--config_file', type=str, default="SSR/configs/SSR_room0_config.yaml",
                     help='config file name.')
@@ -75,6 +75,7 @@ def train():
         config["experiment"]["gpu"] = args.gpu
     config['experiment']['save_dir'] = args.save_dir
     config['enable_instance'] = True
+    config['enable_confidence'] = False
 
     print("Experiment GPU is {}.".format(config["experiment"]["gpu"]))
     trainer.select_gpus(config["experiment"]["gpu"])
@@ -96,6 +97,7 @@ def train():
         # Todo: like nerf, creating sprial/test poses. Make training and test poses/ids interleaved
         replica_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=config["experiment"]["dataset_dir"],
                                                                    train_ids=train_ids, test_ids=test_ids,
+                                                                   enable_confidence=config["enable_confidence"],
                                                                    enable_instance=config["enable_instance"],
                                                                    label_folder=args.label_folder,
                                                                    remap=COCO_STUFF_MAP,
