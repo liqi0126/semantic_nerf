@@ -134,10 +134,20 @@ def train():
     logits_2_label = lambda x: torch.argmax(torch.nn.functional.softmax(x, dim=-1),dim=-1)
     sems = logits_2_label(logits)
 
+    COCO_STUFF_MAP[-1] = -1
     sems_copy = deepcopy(sems)
-    sems[:] = -1
     test_sems_copy = deepcopy(test_sems)
-    for i, c in enumerate(replica_data_loader.semantic_classes):
+    for c in np.unique(sems):
+        sems[sems_copy == c] = COCO_STUFF_MAP[c-1]+1
+    for c in np.unique(test_sems):
+        test_sems[test_sems_copy == c] = COCO_STUFF_MAP[c-1]+1
+    ssr_trainer.semantic_classes = np.unique(test_sems)
+    ssr_trainer.class_name_string = ['void'] + PL_CLASS
+
+    sems_copy = deepcopy(sems)
+    sems[:] = 0
+    test_sems_copy = deepcopy(test_sems)
+    for i, c in enumerate(ssr_trainer.semantic_classes):
         sems[sems_copy == c] = i
         test_sems[test_sems_copy == c] = i
 
@@ -146,11 +156,8 @@ def train():
 
     miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = \
         calculate_segmentation_metrics(true_labels=test_sems, predicted_labels=sems,
-                                       number_classes=replica_data_loader.semantic_classes.shape[0]-1,
+                                       number_classes=ssr_trainer.semantic_classes.shape[0]-1,
                                        ignore_label=-1)
-
-    for i in range(len(ssr_trainer.class_name_string)-1):
-        ssr_trainer.class_name_string[i+1] = PL_CLASS[REPLICA_MAP[i]]
 
     print(f'miou_test: {miou_test}')
     print(f'miou_test_validclass: {miou_test_validclass}')
