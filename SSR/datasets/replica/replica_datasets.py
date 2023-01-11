@@ -69,8 +69,11 @@ class ReplicaDatasetCache(Dataset):
             else:
                 confidence = np.ones(semantic.shape)
 
-            with open(self.clip_feats_list[idx], 'rb') as f:
-                clip_feat = np.load(f).astype('float32')
+            if len(self.clip_feats_list) > 0:
+                with open(self.clip_feats_list[idx], 'rb') as f:
+                    clip_feat = np.load(f).astype('float32')
+            else:
+                clip_feat = self.label_feats[semantic]
 
             if self.semantic_instance_dir is not None:
                 instance = cv2.imread(self.instance_list[idx], cv2.IMREAD_UNCHANGED) # uint16
@@ -113,8 +116,12 @@ class ReplicaDatasetCache(Dataset):
                 confidence = np.load(self.confidence_list[idx])['confidence']
             else:
                 confidence = np.ones(semantic.shape)
-            with open(self.clip_feats_list[idx], 'rb') as f:
-                clip_feat = np.load(f).astype('float32')
+
+            if len(self.clip_feats_list) > 0:
+                with open(self.clip_feats_list[idx], 'rb') as f:
+                    clip_feat = np.load(f).astype('float32')
+            else:
+                clip_feat = self.label_feats[semantic]
 
             if self.semantic_instance_dir is not None:
                 instance = cv2.imread(self.instance_list[idx], cv2.IMREAD_UNCHANGED) # uint16

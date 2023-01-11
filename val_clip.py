@@ -22,10 +22,15 @@ from SSR.training.training_utils import get_logits
 from tqdm import trange
 import time
 
+from palette import PL_CLASS, COCO_STUFF_CLASSES, REPLICA_ROOM_0_CLASSES
+from palette import REPLICA_MAP, COCO_STUFF_MAP
+
 
 def train():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='ade20k_no_conf')
+    parser.add_argument('--suffix', type=str, default="vit_b32")
+    parser.add_argument('--label_folder', type=str, default="semantic_class")
+    parser.add_argument('--confidence_folder', type=str, default=None)
     parser.add_argument('--config_file', type=str, default="SSR/configs/SSR_room0_config.yaml",
                         help='config file name.')
     parser.add_argument('--dataset_type', type=str, default="replica", choices= ["replica", "replica_nyu_cnn", "scannet"],
@@ -84,7 +89,9 @@ def train():
     print("Experiment GPU is {}.".format(config["experiment"]["gpu"]))
     trainer.select_gpus(config["experiment"]["gpu"])
     config["experiment"].update(vars(args))
+
     # Cast intrinsics to right types
+    ssr_trainer = trainer.SSRTrainer(config)
 
     total_num = 900
     step = 5
@@ -95,33 +102,41 @@ def train():
     config["experiment"]["train_ids"] = train_ids
     config["experiment"]["test_ids"] = test_ids
 
+    val_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=config["experiment"]["dataset_dir"],
+                                                               train_ids=train_ids, test_ids=test_ids,
+                                                               label_folder=args.label_folder,
+                                                               suffix=args.suffix,
+                                                               confidence_folder=args.confidence_folder,
+                                                               img_h=config["experiment"]["height"],
+                                                               img_w=config["experiment"]["width"])
+
+
     replica_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=config["experiment"]["dataset_dir"],
-                                                                    train_ids=train_ids, test_ids=test_ids,
-                                                                    img_h=config["experiment"]["height"],
-                                                                    img_w=config["experiment"]["width"])
+                                                               train_ids=train_ids, test_ids=test_ids,
+                                                               label_folder="semantic_class",
+                                                               suffix=args.suffix,
+                                                               confidence_folder=args.confidence_folder,
+                                                               img_h=config["experiment"]["height"],
+                                                               img_w=config["experiment"]["width"])
+
+    ssr_trainer.set_params_replica()
+    ssr_trainer.prepare_data_replica(replica_data_loader)
 
     test_sems = replica_data_loader.test_samples['semantic'].astype('int')
-    test_clip_feat = torch.tensor(replica_data_loader.test_samples['clip_feat'])
-    replica_label_feat = torch.from_numpy(replica_data_loader.replica_label_feats).float()
+    test_clip_feat = torch.tensor(val_data_loader.test_samples['clip_feat'])
+    replica_label_feat = torch.from_numpy(replica_data_loader.label_feats).float()
 
-    test_clip_feat = test_clip_feat.permute(0, 2, 3, 1)
     shape = test_clip_feat.shape
 
-    test_clip_feat.reshape(-1, 512)
-
-    logits = get_logits(test_clip_feat.reshape(-1, 512), replica_label_feat)
-    logits = logits.reshape(*shape[:-1], 102)
-
-    json_class_mapping = os.path.join(config["experiment"]["scene_file"], "info_semantic.json")
-    with open(json_class_mapping, "r") as f:
-        annotations = json.load(f)
-    class_name_string = np.array(["void"] + [x["name"] for x in annotations["classes"]])
+    logits = get_logits(test_clip_feat.reshape(-1, shape[-1]), replica_label_feat)
+    logits = logits.reshape(*shape[:-1], replica_label_feat.shape[0])
 
     logits_2_label = lambda x: torch.argmax(torch.nn.functional.softmax(x, dim=-1),dim=-1)
     sems = logits_2_label(logits)
 
-    test_sems_copy = deepcopy(test_sems)
     sems_copy = deepcopy(sems)
+    sems[:] = -1
+    test_sems_copy = deepcopy(test_sems)
     for i, c in enumerate(replica_data_loader.semantic_classes):
         sems[sems_copy == c] = i
         test_sems[test_sems_copy == c] = i
@@ -134,11 +149,26 @@ def train():
                                        number_classes=replica_data_loader.semantic_classes.shape[0]-1,
                                        ignore_label=-1)
 
+    for i in range(len(ssr_trainer.class_name_string)-1):
+        ssr_trainer.class_name_string[i+1] = PL_CLASS[REPLICA_MAP[i]]
+
     print(f'miou_test: {miou_test}')
     print(f'miou_test_validclass: {miou_test_validclass}')
     print(f'total_accuracy_test: {total_accuracy_test}')
     print(f'class_average_accuracy_test: {class_average_accuracy_test}')
-    print(f'ious_test: {ious_test}')
+    for i, iou in enumerate(ious_test):
+        print_str = f"CLASSES: {ssr_trainer.class_name_string[ssr_trainer.semantic_classes[i+1]]} IOU: {iou} ||"
+
+        sems_i = sems[ssr_trainer.test_semantic_scaled == i]
+        unique_sems_i = np.unique(sems_i)
+
+        total = len(sems_i)
+
+        for unique_i in unique_sems_i:
+            percent = 100 * (sems_i == unique_i).sum() / total
+            print_str += f" {ssr_trainer.class_name_string[ssr_trainer.semantic_classes[unique_i+1]]}: {percent:.2f}%"
+
+        print(print_str)
 
 
 if __name__ == '__main__':

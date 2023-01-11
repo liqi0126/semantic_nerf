@@ -11,49 +11,34 @@ from fire import Fire
 
 import numpy as np
 
+from palette import PL_CLASS, COCO_STUFF_CLASSES, REPLICA_ROOM_0_CLASSES
+from palette import REPLICA_MAP, COCO_STUFF_MAP
+
+
 def main(semantic_class_dir='/data/Replica_Dataset/room_0/Sequence_1/semantic_class',
          replica=True):
 
     if replica:
-        json_class_mapping = '/data/Replica_Dataset/semantic_info/room_0/info_semantic.json'
-        with open(json_class_mapping, "r") as f:
-            annotations = json.load(f)
-        class_name_string = ["void"] + [x["name"] for x in annotations["classes"]]
+        # json_class_mapping = '/data/Replica_Dataset/semantic_info/room_0/info_semantic.json'
+        # with open(json_class_mapping, "r") as f:
+        #     annotations = json.load(f)
+        # class_name_string = ["void"] + [x["name"] for x in annotations["classes"]]
+        class_name_string = ["void"] + REPLICA_ROOM_0_CLASSES
     else:  # COCO STUFF
-        class_name_string = ['void'] + [
-                'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train',
-                'truck', 'boat', 'traffic light', 'fire hydrant', 'stop sign',
-                'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep',
-                'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella',
-                'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard',
-                'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard',
-                'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup', 'fork',
-                'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange',
-                'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair',
-                'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv',
-                'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave',
-                'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase',
-                'scissors', 'teddy bear', 'hair drier', 'toothbrush', 'banner',
-                'blanket', 'bridge', 'cardboard', 'counter', 'curtain', 'door',
-                'rug', 'flower', 'fruit', 'gravel', 'house', 'light',
-                'mirror', 'net', 'pillow', 'platform', 'playingfield',
-                'railroad', 'river', 'road', 'roof', 'sand', 'sea', 'shelf', 'snow',
-                'stairs', 'tent', 'towel', 'wall', 'wall', 'wall',
-                'wall', 'water', 'window', 'window',
-                'tree', 'fence', 'ceiling', 'sky',
-                'cabinet', 'table', 'rug',
-                'pavement', 'mountain', 'grass', 'dirt',
-                'paper', 'food', 'building',
-                'rock', 'wall', 'rug'
-        ]
+        class_name_string = ['void'] + COCO_STUFF_CLASSES
 
+    for i in range(len(class_name_string)-1):
+        if replica:
+            class_name_string[i+1] = PL_CLASS[REPLICA_MAP[i]]
+        else:
+            class_name_string[i+1] = PL_CLASS[COCO_STUFF_MAP[i]]
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     clip_text_token = clip.tokenize(class_name_string).to(device)
 
     # model, preprocess = clip.load("ViT-L/14@336px", device=device)
     model, preprocess = clip.load("ViT-B/32", device=device)
-    suffix = "vit_b32"
+    suffix = "vit_b32_pl"
 
     with torch.no_grad():
         text_features = model.encode_text(clip_text_token).cpu().numpy()
@@ -61,6 +46,8 @@ def main(semantic_class_dir='/data/Replica_Dataset/room_0/Sequence_1/semantic_cl
     # np.savez_compressed(f'{semantic_class_dir}/replica_label_feats.npz', text_features)
     with open(f"{semantic_class_dir}/label_feats_{suffix}.npy", 'wb') as f:
         np.save(f, text_features, allow_pickle=False)
+
+    return
 
     semantic_list = sorted(glob.glob(semantic_class_dir + '/semantic_class_*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
 
