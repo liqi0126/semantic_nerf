@@ -129,7 +129,6 @@ def train():
         sems[sems_copy == s] = i
     sems -= 1
 
-
     miou_test, miou_test_validclass, total_accuracy_test, class_average_accuracy_test, ious_test = \
         calculate_segmentation_metrics(true_labels=test_sems, predicted_labels=sems,
                                        number_classes=replica_data_loader.semantic_classes.shape[0]-1,
