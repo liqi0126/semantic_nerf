@@ -47,21 +47,22 @@ def main(semantic_class_dir='/data/Replica_Dataset/room_0/Sequence_1/semantic_cl
                 'rock', 'wall', 'rug'
         ]
 
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     clip_text_token = clip.tokenize(class_name_string).to(device)
 
-    model, preprocess = clip.load("ViT-L/14@336px", device=device)
+    # model, preprocess = clip.load("ViT-L/14@336px", device=device)
+    model, preprocess = clip.load("ViT-B/32", device=device)
+    suffix = "vit_b32"
 
     with torch.no_grad():
         text_features = model.encode_text(clip_text_token).cpu().numpy()
 
-    semantic_list = sorted(glob.glob(semantic_class_dir + '/semantic_class_*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
-
-
     # np.savez_compressed(f'{semantic_class_dir}/replica_label_feats.npz', text_features)
-    with open(f"{semantic_class_dir}/label_feats.npy", 'wb') as f:
+    with open(f"{semantic_class_dir}/label_feats_{suffix}.npy", 'wb') as f:
         np.save(f, text_features, allow_pickle=False)
 
+    semantic_list = sorted(glob.glob(semantic_class_dir + '/semantic_class_*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
 
     for idx, semantic_file in enumerate(semantic_list):
         print(f"process {idx}")
@@ -69,7 +70,7 @@ def main(semantic_class_dir='/data/Replica_Dataset/room_0/Sequence_1/semantic_cl
         clip_feats = text_features[semantic]
 
         # np.savez_compressed(f'{semantic_class_dir}/clip_feats_{idx}.npz', clip_feats)
-        with open(f"{semantic_class_dir}/clip_feats_{idx}.npy", 'wb') as f:
+        with open(f"{semantic_class_dir}/clip_feats_{suffix}_{idx}.npy", 'wb') as f:
             np.save(f, clip_feats, allow_pickle=False)
 
 

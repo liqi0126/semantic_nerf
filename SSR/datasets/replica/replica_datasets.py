@@ -8,18 +8,20 @@ import imageio
 from imgviz import label_colormap
 
 class ReplicaDatasetCache(Dataset):
-    def __init__(self, data_dir, train_ids, test_ids, label_folder, confidence_folder, img_h=None, img_w=None):
-
+    def __init__(self, data_dir, train_ids, test_ids, label_folder, suffix, confidence_folder, img_h=None, img_w=None):
         traj_file = os.path.join(data_dir, "traj_w_c.txt")
         self.rgb_dir = os.path.join(data_dir, "rgb")
         self.depth_dir = os.path.join(data_dir, "depth")  # depth is in mm uint
         self.semantic_class_dir = os.path.join(data_dir, label_folder)
-        self.confidence_dir = os.path.join(data_dir, confidence_folder)
+        if confidence_folder is not None:
+            self.confidence_dir = os.path.join(data_dir, confidence_folder)
+        else:
+            self.confidence_dir = None
         self.semantic_instance_dir = os.path.join(data_dir, "semantic_instance")
         if not os.path.exists(self.semantic_instance_dir):
             self.semantic_instance_dir = None
 
-        with open(os.path.join(self.semantic_class_dir, 'label_feats.npy'), 'rb') as f:
+        with open(os.path.join(self.semantic_class_dir, f'label_feats_{suffix}.npy'), 'rb') as f:
             self.label_feats = np.load(f).astype('float32')
 
         self.train_ids = train_ids
@@ -35,10 +37,12 @@ class ReplicaDatasetCache(Dataset):
         self.rgb_list = sorted(glob.glob(self.rgb_dir + '/rgb*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
         self.depth_list = sorted(glob.glob(self.depth_dir + '/depth*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
         self.semantic_list = sorted(glob.glob(self.semantic_class_dir + '/semantic_class_*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
-        self.clip_feats_list = sorted(glob.glob(self.semantic_class_dir + '/clip_feats_*.npy'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
+        self.clip_feats_list = sorted(glob.glob(self.semantic_class_dir + f'/clip_feats_{suffix}_*.npy'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
 
-        if confidence_folder is not None:
+        if self.confidence_dir is not None:
             self.confidence_list = sorted(glob.glob(self.confidence_dir + '/confidence_*.npz'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
+        else:
+            self.confidence_list = None
 
         if self.semantic_instance_dir is not None:
             self.instance_list = sorted(glob.glob(self.semantic_instance_dir + '/semantic_instance_*.png'), key=lambda file_name: int(file_name.split("_")[-1][:-4]))
@@ -60,7 +64,11 @@ class ReplicaDatasetCache(Dataset):
             image = cv2.imread(self.rgb_list[idx])[:,:,::-1] / 255.0  # change from BGR uinit 8 to RGB float
             depth = cv2.imread(self.depth_list[idx], cv2.IMREAD_UNCHANGED) / 1000.0  # uint16 mm depth, then turn depth from mm to meter
             semantic = cv2.imread(self.semantic_list[idx], cv2.IMREAD_UNCHANGED)
-            confidence = np.load(self.confidence_list[idx])['confidence']
+            if self.confidence_list is not None:
+                confidence = np.load(self.confidence_list[idx])['confidence']
+            else:
+                confidence = np.ones(semantic.shape)
+
             with open(self.clip_feats_list[idx], 'rb') as f:
                 clip_feat = np.load(f).astype('float32')
 
@@ -74,8 +82,11 @@ class ReplicaDatasetCache(Dataset):
                 semantic = cv2.resize(semantic, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
 
                 confidence = cv2.resize(confidence, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
-                clip_feat = np.concatenate([cv2.resize(clip_feat[..., :512], (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST),
-                                           cv2.resize(clip_feat[..., 512:], (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)], -1)
+                if clip_feat.shape[-1] > 512:
+                    clip_feat = np.concatenate([cv2.resize(clip_feat[..., :512], (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST),
+                                                cv2.resize(clip_feat[..., 512:], (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)], -1)
+                else:
+                    clip_feat = cv2.resize(clip_feat, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
 
                 if self.semantic_instance_dir is not None:
                     instance = cv2.resize(instance, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
@@ -98,9 +109,13 @@ class ReplicaDatasetCache(Dataset):
             image = cv2.imread(self.rgb_list[idx])[:,:,::-1] / 255.0  # change from BGR uinit 8 to RGB float
             depth = cv2.imread(self.depth_list[idx], cv2.IMREAD_UNCHANGED) / 1000.0  # uint16 mm depth, then turn depth from mm to meter
             semantic = cv2.imread(self.semantic_list[idx], cv2.IMREAD_UNCHANGED)
-            confidence = np.load(self.confidence_list[idx])['confidence']
+            if self.confidence_list is not None:
+                confidence = np.load(self.confidence_list[idx])['confidence']
+            else:
+                confidence = np.ones(semantic.shape)
             with open(self.clip_feats_list[idx], 'rb') as f:
                 clip_feat = np.load(f).astype('float32')
+
             if self.semantic_instance_dir is not None:
                 instance = cv2.imread(self.instance_list[idx], cv2.IMREAD_UNCHANGED) # uint16
 
@@ -109,8 +124,11 @@ class ReplicaDatasetCache(Dataset):
                 image = cv2.resize(image, (self.img_w, self.img_h), interpolation=cv2.INTER_LINEAR)
                 depth = cv2.resize(depth, (self.img_w, self.img_h), interpolation=cv2.INTER_LINEAR)
                 semantic = cv2.resize(semantic, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
-                clip_feat = np.concatenate([cv2.resize(clip_feat[..., :512], (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST),
-                                           cv2.resize(clip_feat[..., 512:], (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)], -1)
+                if clip_feat.shape[-1] > 512:
+                    clip_feat = np.concatenate([cv2.resize(clip_feat[..., :512], (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST),
+                                                cv2.resize(clip_feat[..., 512:], (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)], -1)
+                else:
+                    clip_feat = cv2.resize(clip_feat, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
                 if self.semantic_instance_dir is not None:
                     instance = cv2.resize(instance, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
             T_wc = self.Ts_full[idx]

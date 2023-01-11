@@ -109,6 +109,10 @@ class SSRTrainer(object):
 
     def set_params(self):
         self.enable_semantic = self.config["experiment"]["enable_semantic"]
+        if self.config['experiment']['suffix'] == 'vit_l14_336':
+            self.clip_dim = 768
+        else:
+            self.clip_dim = 512
 
         #render options
         self.n_rays = eval(self.config["render"]["N_rays"])  if isinstance(self.config["render"]["N_rays"], str) \
@@ -838,7 +842,7 @@ class SSRTrainer(object):
                 gt_semantic = semantic.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
                 gt_semantic = gt_semantic.cuda()
 
-                gt_clip_feats = clip_feats.reshape(sample_num, -1, 768)[index_batch, index_hw].reshape(-1, 768)
+                gt_clip_feats = clip_feats.reshape(sample_num, -1, self.clip_dim)[index_batch, index_hw].reshape(-1, self.clip_dim)
                 gt_confidence = confidence.reshape(sample_num, -1)[index_batch, index_hw].reshape(-1)
         else:  # sample from all random pixels
 
@@ -851,7 +855,7 @@ class SSRTrainer(object):
                 gt_depth = depth.reshape(-1)[index_hw]
                 gt_semantic = semantic.reshape(-1)[index_hw]
                 gt_semantic = gt_semantic.cuda()
-                gt_clip_feats = clip_feats.reshape(-1, 768)[index_hw, :]
+                gt_clip_feats = clip_feats.reshape(-1, self.clip_dim)[index_hw, :]
                 gt_confidence = confidence.reshape(-1)[index_hw]
 
             self.i_batch += self.n_rays
@@ -1016,7 +1020,7 @@ class SSRTrainer(object):
                                                         scalar_factor=1)
         output_ch = 5 if self.N_importance > 0 else 4
         skips = [4]
-        model = nerf_model(enable_semantic = self.enable_semantic, num_semantic_classes=768,
+        model = nerf_model(enable_semantic = self.enable_semantic, num_semantic_classes=self.clip_dim,
                      D=self.config["model"]["netdepth"], W=self.config["model"]["netwidth"],
                      input_ch=input_ch, output_ch=output_ch, skips=skips,
                      input_ch_views=input_ch_views, use_viewdirs=self.config["render"]["use_viewdirs"]).cuda()
@@ -1024,7 +1028,7 @@ class SSRTrainer(object):
 
         model_fine = None
         if self.N_importance > 0:
-            model_fine = nerf_model(enable_semantic = self.enable_semantic, num_semantic_classes=768,
+            model_fine = nerf_model(enable_semantic = self.enable_semantic, num_semantic_classes=self.clip_dim,
                               D=self.config["model"]["netdepth_fine"], W=self.config["model"]["netwidth_fine"],
                               input_ch=input_ch, output_ch=output_ch, skips=skips,
                               input_ch_views=input_ch_views, use_viewdirs=self.config["render"]["use_viewdirs"]).cuda()
