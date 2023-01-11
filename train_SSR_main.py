@@ -20,6 +20,9 @@ def train():
                     help='config file name.')
     parser.add_argument('--dataset_type', type=str, default="replica", choices= ["replica", "replica_nyu_cnn", "scannet"],
                         help='the dataset to be used,')
+    parser.add_argument('--label_folder', type=str, default="semantic_class")
+    parser.add_argument('--confidence_folder', type=str, default=None)
+    parser.add_argument('--save_dir', type=str, default="debug")
 
     ### working mode and specific options
 
@@ -71,9 +74,12 @@ def train():
         config = yaml.safe_load(f)
     if len(args.gpu)>0:
         config["experiment"]["gpu"] = args.gpu
+
+    config['experiment']['save_dir'] = args.save_dir
     print("Experiment GPU is {}.".format(config["experiment"]["gpu"]))
     trainer.select_gpus(config["experiment"]["gpu"])
     config["experiment"].update(vars(args))
+
     # Cast intrinsics to right types
     ssr_trainer = trainer.SSRTrainer(config)
 
@@ -90,9 +96,11 @@ def train():
 
         # Todo: like nerf, creating sprial/test poses. Make training and test poses/ids interleaved
         replica_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=config["experiment"]["dataset_dir"],
-                                                                    train_ids=train_ids, test_ids=test_ids,
-                                                                    img_h=config["experiment"]["height"],
-                                                                    img_w=config["experiment"]["width"])
+                                                                   train_ids=train_ids, test_ids=test_ids,
+                                                                   label_folder=args.label_folder,
+                                                                   confidence_folder=args.confidence_folder,
+                                                                   img_h=config["experiment"]["height"],
+                                                                   img_w=config["experiment"]["width"])
 
 
         print("--------------------")
@@ -130,7 +138,10 @@ def train():
         else:
             print("Standard setup with full dense supervision.")
         ssr_trainer.set_params_replica()
-        ssr_trainer.prepare_data_replica(replica_data_loader)
+        if args.label_folder == 'semantic_class':
+            ssr_trainer.prepare_data_replica(replica_data_loader)
+        else:
+            ssr_trainer.prepare_data_coco(replica_data_loader)
 
     elif args.dataset_type == "replica_nyu_cnn":
         print("----- Replica Dataset with NYUv2-13 CNN Predictions -----")

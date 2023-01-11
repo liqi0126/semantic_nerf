@@ -23,6 +23,9 @@ def train():
     parser.add_argument('--resume', type=str)
     parser.add_argument('--config_file', type=str, default="SSR/configs/SSR_room0_config_test.yaml",
                     help='config file name.')
+    parser.add_argument('--label_folder', type=str, default="semantic_class")
+    parser.add_argument('--confidence_folder', type=str, default=None)
+    parser.add_argument('--save_dir', type=str, default="debug")
     parser.add_argument('--dataset_type', type=str, default="replica", choices= ["replica", "replica_nyu_cnn", "scannet"],
                         help='the dataset to be used,')
 
@@ -76,6 +79,7 @@ def train():
         config = yaml.safe_load(f)
     if len(args.gpu)>0:
         config["experiment"]["gpu"] = args.gpu
+    config['experiment']['save_dir'] = args.save_dir
     print("Experiment GPU is {}.".format(config["experiment"]["gpu"]))
     trainer.select_gpus(config["experiment"]["gpu"])
     config["experiment"].update(vars(args))
@@ -93,9 +97,11 @@ def train():
 
     # Todo: like nerf, creating sprial/test poses. Make training and test poses/ids interleaved
     replica_data_loader = replica_datasets.ReplicaDatasetCache(data_dir=config["experiment"]["dataset_dir"],
-                                                                    train_ids=train_ids, test_ids=test_ids,
-                                                                    img_h=config["experiment"]["height"],
-                                                                    img_w=config["experiment"]["width"])
+                                                               train_ids=train_ids, test_ids=test_ids,
+                                                               label_folder=args.label_folder,
+                                                               confidence_folder=args.confidence_folder,
+                                                               img_h=config["experiment"]["height"],
+                                                               img_w=config["experiment"]["width"])
 
     print("Standard setup with full dense supervision.")
     ssr_trainer.set_params_replica()

@@ -73,7 +73,7 @@ def fc_block(in_f, out_f):
 
 class Semantic_NeRF(nn.Module):
     """
-    Compared to the NeRF class wich also predicts semantic logits from MLPs, here we make the semantic label only a function of 3D position 
+    Compared to the NeRF class wich also predicts semantic logits from MLPs, here we make the semantic label only a function of 3D position
     instead of both positon and viewing directions.
     """
     def __init__(self, enable_semantic, num_semantic_classes, D=8, W=256, input_ch=3, input_ch_views=3, output_ch=4, skips=[4], use_viewdirs=False,
@@ -101,13 +101,13 @@ class Semantic_NeRF(nn.Module):
 
         ### Implementation according to the official code release (https://github.com/bmild/nerf/blob/master/run_nerf_helpers.py#L104-L105)
 
-        # Another layer is used to 
+        # Another layer is used to
         self.views_linears = nn.ModuleList([nn.Linear(input_ch_views + W, W // 2)])
         if use_viewdirs:
             self.feature_linear = nn.Linear(W, W)
             self.alpha_linear = nn.Linear(W, 1)
             if enable_semantic:
-                self.semantic_linear = nn.Sequential(fc_block(W, W // 2), nn.Linear(W // 2, num_semantic_classes))
+                self.semantic_linear = nn.Sequential(fc_block(W, W), nn.Linear(W, num_semantic_classes))
             self.rgb_linear = nn.Linear(W // 2, 3)
         else:
             self.output_linear = nn.Linear(W, output_ch)
@@ -139,7 +139,7 @@ class Semantic_NeRF(nn.Module):
             for i, l in enumerate(self.views_linears):
                 h = self.views_linears[i](h)
                 h = F.relu(h)
-                
+
             if show_endpoint:
                 endpoint_feat = h
             rgb = self.rgb_linear(h)
